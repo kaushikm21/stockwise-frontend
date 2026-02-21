@@ -94,7 +94,7 @@ const NIFTY_STOCKS = {
 const SECTOR_COLORS = { Banking:"#3b82f6",IT:"#8b5cf6",FMCG:"#f59e0b",Conglomerate:"#06b6d4",NBFC:"#10b981","Consumer Tech":"#ec4899",Fintech:"#f97316","Renewable Energy":"#22c55e","Electronics Mfg":"#a78bfa","PSU Finance":"#64748b",Utilities:"#0ea5e9",Infrastructure:"#d97706" };
 
 // ── API base — change this to your Railway URL when deploying ─────────────────
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://stockwise-backend-production-3527.up.railway.app";
 
 function generateChartData(ticker) {
   const seed = ticker.split("").reduce((a,c) => a + c.charCodeAt(0), 0);
