@@ -224,7 +224,7 @@ function DarkHorses() {
         ))}
       </div>
       <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: G.muted, fontFamily: G.fontMono }}>
-        This takes ~60 seconds — Claude is analysing momentum across 50 stocks 🔍
+        This takes ~60 seconds — StockWise is analysing momentum across stocks 🔍
       </div>
     </div>
   );
