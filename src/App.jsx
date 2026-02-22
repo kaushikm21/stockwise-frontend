@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine } from "recharts";
 
 const G = {
@@ -32,11 +32,21 @@ const css = `
   @keyframes spin { to { transform:rotate(360deg); } }
   .pulse { animation: pulse 2s ease-in-out infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-  .slide-in {.chart-wrapper { -webkit-transform: translateZ(0); transform: translateZ(0); } animation: slideIn 0.3s ease-out; }
+  .slide-in { animation: slideIn 0.3s ease-out; }
+  .chart-wrapper { -webkit-transform: translateZ(0); transform: translateZ(0); }
   @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
   @keyframes ticker { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+  .dropdown { position:absolute; top:calc(100% + 6px); left:0; right:0; background:#12141f; border:1px solid ${G.border}; border-radius:10px; z-index:100; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
+  .dropdown-item { padding:12px 14px; cursor:pointer; transition:background 0.1s; border-bottom:1px solid ${G.border}; }
+  .dropdown-item:last-child { border-bottom:none; }
+  .dropdown-item:hover { background:rgba(245,158,11,0.08); }
+  .search-wrap { position:relative; flex:1; min-width:180px; }
 `;
 
+// ── API base ──────────────────────────────────────────────────────────────────
+const API_BASE = "https://stockwise-backend-production-3527.up.railway.app";
+
+// ── Indian Stock Data (Advisor Tab) ───────────────────────────────────────────
 const NIFTY_STOCKS = {
   conservative: {
     short: [
@@ -93,9 +103,21 @@ const NIFTY_STOCKS = {
 
 const SECTOR_COLORS = { Banking:"#3b82f6",IT:"#8b5cf6",FMCG:"#f59e0b",Conglomerate:"#06b6d4",NBFC:"#10b981","Consumer Tech":"#ec4899",Fintech:"#f97316","Renewable Energy":"#22c55e","Electronics Mfg":"#a78bfa","PSU Finance":"#64748b",Utilities:"#0ea5e9",Infrastructure:"#d97706" };
 
-// ── API base — change this to your Railway URL when deploying ─────────────────
-const API_BASE = "https://stockwise-backend-production-3527.up.railway.app";
+// ── Default suggestions with names ───────────────────────────────────────────
+const SUGGESTIONS = [
+  { ticker:"RELIANCE", name:"Reliance Industries" },
+  { ticker:"TCS", name:"Tata Consultancy Services" },
+  { ticker:"HDFCBANK", name:"HDFC Bank" },
+  { ticker:"INFY", name:"Infosys" },
+  { ticker:"ZOMATO", name:"Zomato" },
+  { ticker:"BAJFINANCE", name:"Bajaj Finance" },
+  { ticker:"DIXON", name:"Dixon Technologies" },
+  { ticker:"WIPRO", name:"Wipro" },
+  { ticker:"ADANIPORTS", name:"Adani Ports" },
+  { ticker:"NESTLEIND", name:"Nestlé India" },
+];
 
+// ── Chart data generator (fallback if no real history) ────────────────────────
 function generateChartData(ticker) {
   const seed = ticker.split("").reduce((a,c) => a + c.charCodeAt(0), 0);
   const rng = (i) => Math.sin(seed * i * 0.31 + i * 1.7) * 0.5 + 0.5;
@@ -119,6 +141,46 @@ function generateChartData(ticker) {
   return data;
 }
 
+// ── Build chart data from real yfinance history ───────────────────────────────
+function buildChartFromHistory(history, ticker) {
+  if (!history || history.length === 0) return generateChartData(ticker);
+
+  // Use real historical data
+  const historical = history.map(h => ({
+    month: h.date,
+    price: h.close,
+    historical: true,
+    forecast: false,
+  }));
+
+  // Generate simple forecast from last price + trend
+  const last = historical[historical.length - 1].price;
+  const first = historical[0].price;
+  const trendPct = (last - first) / first / historical.length;
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const now = new Date();
+
+  for (let i = 1; i <= 6; i++) {
+    const fp = last * (1 + trendPct * i * 20);
+    const spread = fp * (0.03 + i * 0.015);
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    historical.push({
+      month: months[d.getMonth()] + " '" + String(d.getFullYear()).slice(2),
+      price: Math.round(fp),
+      upper: Math.round(fp + spread),
+      lower: Math.round(fp - spread),
+      historical: false,
+      forecast: true,
+    });
+  }
+
+  // Thin out historical data to ~30 points for performance
+  const step = Math.max(1, Math.floor((historical.length - 6) / 30));
+  const thinned = historical.filter((_, i) => i % step === 0 || i >= historical.length - 6);
+  return thinned;
+}
+
+// ── Chart Tooltip ─────────────────────────────────────────────────────────────
 const ChartTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
@@ -132,110 +194,247 @@ const ChartTooltip = ({ active, payload, label }) => {
   );
 };
 
+// ── Research Terminal ─────────────────────────────────────────────────────────
 function ResearchTerminal() {
   const [inputVal, setInputVal] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [chartData, setChartData] = useState(null);
   const [chartTicker, setChartTicker] = useState("");
+  const [stockInfo, setStockInfo] = useState(null);
+  const [searchResults, setSearchResults] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
   const chatEndRef = useRef(null);
+  const searchTimer = useRef(null);
+  const wrapperRef = useRef(null);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  const SUGGESTIONS = ["RELIANCE","TCS","HDFCBANK","INFY","ZOMATO","BAJFINANCE","DIXON","WIPRO","ADANIPORTS","NESTLEIND"];
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e) => { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setShowDropdown(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
-  const analyze = async (t) => {
-    const sym = t.trim().toUpperCase();
+  // Live search as user types
+  const handleInput = (val) => {
+    setInputVal(val);
+    setShowDropdown(false);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (val.trim().length < 2) { setSearchResults([]); return; }
+
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(val)}`);
+        const data = await res.json();
+        setSearchResults(data.results || []);
+        setShowDropdown((data.results || []).length > 0);
+      } catch {
+        setSearchResults([]);
+      }
+      setSearching(false);
+    }, 400); // debounce 400ms
+  };
+
+  const analyze = async (ticker, companyName) => {
+    const sym = ticker.trim().toUpperCase();
     if (!sym) return;
+    setShowDropdown(false);
+    setInputVal(companyName ? `${sym} — ${companyName}` : sym);
     setLoading(true);
     setChartData(null);
-    const userMsg = { role: "user", content: `Analyse ${sym}.NS (NSE) — give me a detailed fundamental analysis.` };
+    setStockInfo(null);
+
+    const userMsg = { role: "user", content: `Analyse ${sym}.NS — give me a detailed fundamental analysis.` };
     setMessages(prev => [...prev, userMsg]);
 
     try {
       const response = await fetch(`${API_BASE}/research`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ticker: sym,
-          question: `Give me a full fundamental analysis of ${sym}`,
-        }),
+        body: JSON.stringify({ ticker: sym, question: `Give me a full fundamental analysis of ${sym}` }),
       });
       if (!response.ok) throw new Error(`Backend error: ${response.status}`);
       const data = await response.json();
-      const content = data.analysis || "Unable to fetch analysis.";
-      setMessages(prev => [...prev, { role: "assistant", content }]);
+
+      setMessages(prev => [...prev, { role: "assistant", content: data.analysis || "Unable to fetch analysis." }]);
+
+      // Set live stock info for the header
+      const ld = data.live_data || {};
+      setStockInfo({
+        name: ld.company_name || companyName || sym,
+        price: ld.price || "—",
+        pe: ld.pe || "—",
+        roe: ld.roe || "—",
+        mcap: ld.mcap || "—",
+        week_52_high: ld.week_52_high || "—",
+        week_52_low: ld.week_52_low || "—",
+        verdict: data.verdict || "",
+        target_12m: data.target_12m || "",
+      });
+
+      setChartTicker(sym);
       setTimeout(() => {
-	  setChartData(generateChartData(sym));
-	  setChartTicker(sym);
-	}, 100);
+        setChartData(buildChartFromHistory(ld.history, sym));
+      }, 100);
+
     } catch (e) {
-      setMessages(prev => [...prev, { role: "assistant", content: `⚠️ Error: ${e.message}. Make sure your backend is running on port 8000.` }]);
+      setMessages(prev => [...prev, { role: "assistant", content: `⚠️ Error: ${e.message}. Make sure your backend is running.` }]);
     }
     setLoading(false);
   };
 
-  const handleSend = () => { if (inputVal.trim()) { analyze(inputVal); setInputVal(""); } };
+  const handleSend = () => {
+    // If input looks like a ticker (short, uppercase) use directly
+    // Otherwise try first search result
+    if (searchResults.length > 0) {
+      analyze(searchResults[0].ticker, searchResults[0].name);
+    } else {
+      analyze(inputVal.split("—")[0].trim());
+    }
+    setInputVal("");
+    setSearchResults([]);
+  };
+
+  const verdictColor = stockInfo?.verdict === "BUY" ? G.green : stockInfo?.verdict === "AVOID" ? G.red : G.accent;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* Search box */}
       <div className="card" style={{ padding: 16 }}>
         <div style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono, marginBottom: 10, letterSpacing: "0.08em" }}>NSE STOCK RESEARCH TERMINAL</div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <input className="inp" style={{ flex: 1, minWidth: 180, fontFamily: G.fontMono, fontSize: 15, letterSpacing: "0.05em" }}
-            placeholder="Enter NSE ticker (e.g. RELIANCE)" value={inputVal}
-            onChange={e => setInputVal(e.target.value.toUpperCase())}
-            onKeyDown={e => e.key === "Enter" && handleSend()} />
+          <div className="search-wrap" ref={wrapperRef}>
+            <input
+              className="inp"
+              style={{ fontFamily: G.fontBody, fontSize: 14 }}
+              placeholder="Search by name or ticker (e.g. Ola Electric, RELIANCE)"
+              value={inputVal}
+              onChange={e => handleInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleSend(); if (e.key === "Escape") setShowDropdown(false); }}
+              onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
+            />
+            {/* Live search dropdown */}
+            {showDropdown && searchResults.length > 0 && (
+              <div className="dropdown">
+                {searchResults.map(r => (
+                  <div key={r.ticker} className="dropdown-item" onClick={() => analyze(r.ticker, r.name)}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div>
+                        <span style={{ fontFamily: G.fontMono, fontWeight: 700, fontSize: 13, color: G.accent }}>{r.ticker}</span>
+                        <span style={{ marginLeft: 10, fontSize: 13, color: G.text }}>{r.name}</span>
+                      </div>
+                      {r.sector && <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>{r.sector}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <button className="btn" onClick={handleSend} disabled={!inputVal.trim() || loading} style={{ whiteSpace: "nowrap" }}>
-            {loading ? "Analysing…" : "Analyse →"}
+            {loading ? "Analysing…" : searching ? "Searching…" : "Analyse →"}
           </button>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
-          {SUGGESTIONS.map(s => (
-            <span key={s} className="chip unsel" onClick={() => { setInputVal(s); analyze(s); setInputVal(""); }}>{s}</span>
-          ))}
+
+        {/* Default suggestions */}
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 10, color: G.muted, fontFamily: G.fontMono, marginBottom: 8, letterSpacing: "0.06em" }}>POPULAR STOCKS</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {SUGGESTIONS.map(s => (
+              <div key={s.ticker} className="unsel" style={{ borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}
+                onClick={() => analyze(s.ticker, s.name)}>
+                <div style={{ fontFamily: G.fontMono, fontWeight: 700, fontSize: 11, color: G.accent }}>{s.ticker}</div>
+                <div style={{ fontSize: 10, color: G.muted, fontFamily: G.fontBody, marginTop: 1 }}>{s.name}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {chartData && (
-        <div className="card slide-in chart-wrapper" style={{ padding: "20px 16px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-            <div>
-              <span style={{ fontFamily: G.fontMono, fontWeight: 600, fontSize: 16, color: G.accent }}>{chartTicker}.NS</span>
-              <span style={{ marginLeft: 10, fontSize: 12, color: G.muted }}>Price History + AI Forecast</span>
+      {/* Live stock info header + chart */}
+      {(stockInfo || chartData) && (
+        <div className="card chart-wrapper slide-in" style={{ padding: "20px 16px" }}>
+          {/* Stock header */}
+          {stockInfo && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: G.fontMono, fontWeight: 700, fontSize: 18, color: G.accent }}>{chartTicker}.NS</span>
+                    <span style={{ fontSize: 24, fontWeight: 700, color: G.green, fontFamily: G.fontMono }}>{stockInfo.price}</span>
+                  </div>
+                  <div style={{ fontSize: 14, color: G.text, marginTop: 2, fontFamily: G.fontBody, fontWeight: 500 }}>{stockInfo.name}</div>
+                </div>
+                {stockInfo.verdict && (
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ background: verdictColor + "18", border: `1px solid ${verdictColor}40`, borderRadius: 8, padding: "6px 14px", display: "inline-block" }}>
+                      <div style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono, marginBottom: 2 }}>AI VERDICT</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: verdictColor, fontFamily: G.fontMono }}>{stockInfo.verdict}</div>
+                    </div>
+                    {stockInfo.target_12m && (
+                      <div style={{ fontSize: 11, color: G.muted, marginTop: 4, fontFamily: G.fontMono }}>
+                        12M Target: <span style={{ color: G.accent }}>{stockInfo.target_12m}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Key metrics row */}
+              <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap", paddingTop: 12, borderTop: `1px solid ${G.border}` }}>
+                {[["P/E", stockInfo.pe], ["ROE", stockInfo.roe], ["MCap", stockInfo.mcap], ["52W High", stockInfo.week_52_high], ["52W Low", stockInfo.week_52_low]].map(([k, v]) => (
+                  <div key={k}>
+                    <div style={{ fontSize: 10, color: G.muted, fontFamily: G.fontMono, marginBottom: 2 }}>{k}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: G.text, fontFamily: G.fontMono }}>{v}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div style={{ display: "flex", gap: 16, fontSize: 11, color: G.muted }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 20, height: 2, background: G.green, display: "inline-block", borderRadius: 2 }} /> Historical</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 20, height: 2, background: G.accent, display: "inline-block", borderRadius: 2 }} /> Forecast</span>
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={240} minWidth={0}>
-            <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={G.green} stopOpacity={0.15} />
-                  <stop offset="95%" stopColor={G.green} stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="foreGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={G.accent} stopOpacity={0.2} />
-                  <stop offset="95%" stopColor={G.accent} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-              <XAxis dataKey="month" tick={{ fill: G.muted, fontSize: 10, fontFamily: G.fontMono }} tickLine={false} axisLine={false} interval={5} />
-              <YAxis tick={{ fill: G.muted, fontSize: 10, fontFamily: G.fontMono }} tickLine={false} axisLine={false} tickFormatter={v => `₹${(v/1000).toFixed(1)}k`} width={40} />
-              <Tooltip content={<ChartTooltip />} />
-              <ReferenceLine x="Oct '25" stroke="rgba(255,255,255,0.1)" strokeDasharray="4 4" label={{ value: "Today", fill: G.muted, fontSize: 10 }} />
-              <Area type="monotone" dataKey="price" stroke={G.green} strokeWidth={2} fill="url(#histGrad)" dot={false} activeDot={{ r: 4, fill: G.green }} data={chartData.filter(d => d.historical)} />
-              <Area type="monotone" dataKey="price" stroke={G.accent} strokeWidth={2} strokeDasharray="5 3" fill="url(#foreGrad)" dot={false} activeDot={{ r: 4, fill: G.accent }} data={chartData.filter(d => !d.historical)} />
-            </AreaChart>
-          </ResponsiveContainer>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", textAlign: "center", marginTop: 8, fontFamily: G.fontMono }}>
-            ⚠ Forecast is illustrative and based on fundamental momentum signals — not financial advice.
-          </div>
+          )}
+
+          {/* Chart */}
+          {chartData && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+                <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono, letterSpacing: "0.06em" }}>PRICE HISTORY + AI FORECAST</span>
+                <div style={{ display: "flex", gap: 14, fontSize: 11, color: G.muted }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 16, height: 2, background: G.green, display: "inline-block", borderRadius: 2 }} /> Historical</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 16, height: 2, background: G.accent, display: "inline-block", borderRadius: 2 }} /> Forecast</span>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={200} minWidth={0}>
+                <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={G.green} stopOpacity={0.15} />
+                      <stop offset="95%" stopColor={G.green} stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="foreGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={G.accent} stopOpacity={0.2} />
+                      <stop offset="95%" stopColor={G.accent} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="month" tick={{ fill: G.muted, fontSize: 9, fontFamily: G.fontMono }} tickLine={false} axisLine={false} interval={5} />
+                  <YAxis tick={{ fill: G.muted, fontSize: 9, fontFamily: G.fontMono }} tickLine={false} axisLine={false} tickFormatter={v => `₹${(v/1000).toFixed(1)}k`} width={40} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Area type="monotone" dataKey="price" stroke={G.green} strokeWidth={2} fill="url(#histGrad)" dot={false} activeDot={{ r: 4, fill: G.green }} data={chartData.filter(d => d.historical)} />
+                  <Area type="monotone" dataKey="price" stroke={G.accent} strokeWidth={2} strokeDasharray="5 3" fill="url(#foreGrad)" dot={false} activeDot={{ r: 4, fill: G.accent }} data={chartData.filter(d => !d.historical)} />
+                </AreaChart>
+              </ResponsiveContainer>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.18)", textAlign: "center", marginTop: 8, fontFamily: G.fontMono }}>
+                ⚠ Forecast is illustrative based on trend momentum — not financial advice.
+              </div>
+            </>
+          )}
         </div>
       )}
 
+      {/* Chat messages */}
       {messages.length > 0 && (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "12px 16px", borderBottom: `1px solid ${G.border}`, fontSize: 11, color: G.muted, fontFamily: G.fontMono, letterSpacing: "0.07em" }}>
@@ -264,9 +463,10 @@ function ResearchTerminal() {
           </div>
           <div style={{ padding: "12px 16px", borderTop: `1px solid ${G.border}`, display: "flex", gap: 10 }}>
             <input className="inp" style={{ flex: 1, fontSize: 13 }} placeholder="Ask a follow-up (e.g. 'How does it compare to peers?')"
-              value={inputVal} onChange={e => setInputVal(e.target.value)}
+              value={inputVal.includes("—") ? "" : inputVal}
+              onChange={e => setInputVal(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleSend()} />
-            <button className="btn" disabled={!inputVal.trim() || loading} onClick={handleSend} style={{ padding: "11px 18px" }}>↑</button>
+            <button className="btn" disabled={loading} onClick={handleSend} style={{ padding: "11px 18px" }}>↑</button>
           </div>
         </div>
       )}
@@ -275,13 +475,14 @@ function ResearchTerminal() {
         <div style={{ textAlign: "center", padding: "40px 20px", color: G.muted }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>📊</div>
           <div style={{ fontFamily: G.fontDisplay, fontSize: 18, color: G.text, marginBottom: 8 }}>Research any NSE stock</div>
-          <div style={{ fontSize: 13, lineHeight: 1.6 }}>Enter a ticker above or pick one of the suggestions.<br />You'll get fundamentals + a 6-month AI price forecast.</div>
+          <div style={{ fontSize: 13, lineHeight: 1.6 }}>Type a company name or ticker above.<br />You'll get live fundamentals + an AI price forecast.</div>
         </div>
       )}
     </div>
   );
 }
 
+// ── Advisor Flow ──────────────────────────────────────────────────────────────
 const RISKS = [
   { id:"conservative", icon:"🛡️", label:"Rakshak (Conservative)", desc:"Capital preservation. Low volatility Nifty 50 bluechips and PSU dividend payers." },
   { id:"moderate", icon:"⚖️", label:"Santulit (Moderate)", desc:"Balanced growth. Mix of large-cap leaders and emerging sectoral stories." },
@@ -427,6 +628,7 @@ function AdvisorFlow() {
   );
 }
 
+// ── App Shell ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("advisor");
   return (
