@@ -32,7 +32,7 @@ const css = `
   @keyframes spin { to { transform:rotate(360deg); } }
   .pulse { animation: pulse 2s ease-in-out infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-  .slide-in { animation: slideIn 0.3s ease-out; }
+  .slide-in {.chart-wrapper { -webkit-transform: translateZ(0); transform: translateZ(0); } animation: slideIn 0.3s ease-out; }
   @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
   @keyframes ticker { from{transform:translateX(0)} to{transform:translateX(-50%)} }
 `;
@@ -165,8 +165,10 @@ function ResearchTerminal() {
       const data = await response.json();
       const content = data.analysis || "Unable to fetch analysis.";
       setMessages(prev => [...prev, { role: "assistant", content }]);
-      setChartData(generateChartData(sym));
-      setChartTicker(sym);
+      setTimeout(() => {
+	  setChartData(generateChartData(sym));
+	  setChartTicker(sym);
+	}, 100);
     } catch (e) {
       setMessages(prev => [...prev, { role: "assistant", content: `⚠️ Error: ${e.message}. Make sure your backend is running on port 8000.` }]);
     }
@@ -196,7 +198,7 @@ function ResearchTerminal() {
       </div>
 
       {chartData && (
-        <div className="card slide-in" style={{ padding: "20px 16px" }}>
+        <div className="card slide-in chart-wrapper" style={{ padding: "20px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
             <div>
               <span style={{ fontFamily: G.fontMono, fontWeight: 600, fontSize: 16, color: G.accent }}>{chartTicker}.NS</span>
