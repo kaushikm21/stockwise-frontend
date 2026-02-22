@@ -207,7 +207,7 @@ function ResearchTerminal() {
               <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 20, height: 2, background: G.accent, display: "inline-block", borderRadius: 2 }} /> Forecast</span>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={240}>
+          <ResponsiveContainer width="100%" height={240} minWidth={0}>
             <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">
@@ -220,8 +220,8 @@ function ResearchTerminal() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-              <XAxis dataKey="month" tick={{ fill: G.muted, fontSize: 10, fontFamily: G.fontMono }} tickLine={false} axisLine={false} interval={3} />
-              <YAxis tick={{ fill: G.muted, fontSize: 10, fontFamily: G.fontMono }} tickLine={false} axisLine={false} tickFormatter={v => `₹${(v/1000).toFixed(1)}k`} width={52} />
+              <XAxis dataKey="month" tick={{ fill: G.muted, fontSize: 10, fontFamily: G.fontMono }} tickLine={false} axisLine={false} interval={5} />
+              <YAxis tick={{ fill: G.muted, fontSize: 10, fontFamily: G.fontMono }} tickLine={false} axisLine={false} tickFormatter={v => `₹${(v/1000).toFixed(1)}k`} width={40} />
               <Tooltip content={<ChartTooltip />} />
               <ReferenceLine x="Oct '25" stroke="rgba(255,255,255,0.1)" strokeDasharray="4 4" label={{ value: "Today", fill: G.muted, fontSize: 10 }} />
               <Area type="monotone" dataKey="price" stroke={G.green} strokeWidth={2} fill="url(#histGrad)" dot={false} activeDot={{ r: 4, fill: G.green }} data={chartData.filter(d => d.historical)} />
