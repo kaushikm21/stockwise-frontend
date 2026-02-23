@@ -265,7 +265,7 @@ function DarkHorses() {
         <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap" }}>
           {lastUpdated && <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>Last scan: {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
           {nextRefresh && <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>Next refresh in: {nextRefresh}m</span>}
-          <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>Stocks scanned: 50</span>
+          <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>Stocks scanned: 150</span>
         </div>
       </div>
 
