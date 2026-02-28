@@ -169,14 +169,23 @@ const ChartTooltip = ({ active, payload, label }) => {
 // ── Dark Horses Tab ───────────────────────────────────────────────────────────
 const CONVICTION_COLORS = { HIGH: "#22c55e", MEDIUM: "#f59e0b", SPECULATIVE: "#8b5cf6" };
 
+const REGIME_CONFIG = {
+  HEALTHY:  { color: "#22c55e", bg: "rgba(34,197,94,0.08)",  border: "rgba(34,197,94,0.25)",  icon: "🟢", label: "Market Healthy",  subtext: "Conditions are favourable for momentum picks." },
+  CAUTIOUS: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)", icon: "🟡", label: "Market Cautious",  subtext: "Early weakness detected. Picks are more selective — size positions carefully." },
+  BEARISH:  { color: "#ef4444", bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.25)",  icon: "🔴", label: "Market Caution Mode", subtext: "Nifty is in a downtrend. Momentum picks underperform in falling markets. High risk of loss." },
+};
+
 function DarkHorses() {
   const [picks, setPicks] = useState([]);
   const [marketNote, setMarketNote] = useState("");
+  const [regime, setRegime] = useState(null);
+  const [stocksScanned, setStocksScanned] = useState(150);
   const [loading, setLoading] = useState(true);
   const [nextRefresh, setNextRefresh] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showAnyway, setShowAnyway] = useState(false); // override toggle for BEARISH
 
   const fetchPicks = async (forceRefresh = false) => {
     forceRefresh ? setRefreshing(true) : setLoading(true);
@@ -188,8 +197,11 @@ function DarkHorses() {
       if (data.error && (!data.picks || data.picks.length === 0)) throw new Error(data.error);
       setPicks(data.picks || []);
       setMarketNote(data.market_note || "");
+      setRegime(data.regime || null);
+      setStocksScanned(data.stocks_scanned || 150);
       setNextRefresh(data.next_refresh_mins || 240);
       setLastUpdated(new Date());
+      setShowAnyway(false); // reset override on fresh fetch
     } catch (e) {
       setError(e.message);
     }
@@ -198,18 +210,21 @@ function DarkHorses() {
   };
 
   useEffect(() => { fetchPicks(); }, []);
-
-  // Auto-refresh every 4 hours
   useEffect(() => {
     const interval = setInterval(() => fetchPicks(), 4 * 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
+  const regimeName = regime?.regime || "HEALTHY";
+  const rc = REGIME_CONFIG[regimeName] || REGIME_CONFIG.HEALTHY;
+  const isBearish = regimeName === "BEARISH";
+  const showPicks = !isBearish || showAnyway;
+
   if (loading) return (
     <div>
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontFamily: G.fontDisplay, fontSize: "clamp(22px,5vw,32px)", marginBottom: 6 }}>🐴 Dark Horses</div>
-        <div style={{ color: G.muted, fontSize: 13 }}>Scanning 50 NSE stocks for early momentum signals…</div>
+        <div style={{ color: G.muted, fontSize: 13 }}>Scanning 150 NSE stocks for early momentum signals…</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {[...Array(5)].map((_, i) => (
@@ -224,7 +239,7 @@ function DarkHorses() {
         ))}
       </div>
       <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: G.muted, fontFamily: G.fontMono }}>
-        This takes ~60 seconds — StockWise is analysing momentum across stocks 🔍
+        This takes ~60–90 seconds — Stockwise is analysing 150 stocks 🔍
       </div>
     </div>
   );
@@ -245,7 +260,7 @@ function DarkHorses() {
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
             <div style={{ fontFamily: G.fontDisplay, fontSize: "clamp(22px,5vw,32px)", marginBottom: 4 }}>🐴 Dark Horses</div>
-            <div style={{ color: G.muted, fontSize: 13 }}>AI-spotted early momentum signals across NSE · Updated every 4 hours</div>
+            <div style={{ color: G.muted, fontSize: 13 }}>AI-spotted early momentum signals across NSE · Relative strength vs Nifty</div>
           </div>
           <button className="btn-ghost" onClick={() => fetchPicks(true)} disabled={refreshing} style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ display: "inline-block" }} className={refreshing ? "spin" : ""}>↻</span>
@@ -253,8 +268,74 @@ function DarkHorses() {
           </button>
         </div>
 
-        {/* Market note */}
-        {marketNote && (
+        {/* Market Regime Banner */}
+        {regime && (
+          <div style={{ marginTop: 14, padding: "14px 16px", background: rc.bg, border: `1px solid ${rc.border}`, borderRadius: 10 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 14 }}>{rc.icon}</span>
+                  <span style={{ fontFamily: G.fontMono, fontWeight: 700, fontSize: 12, color: rc.color }}>{rc.label.toUpperCase()}</span>
+                </div>
+                <div style={{ fontSize: 13, color: G.text, lineHeight: 1.6, marginBottom: isBearish ? 6 : 0 }}>{rc.subtext}</div>
+                {regime.nifty_ret_5d !== undefined && (
+                  <div style={{ display: "flex", gap: 14, marginTop: 8, flexWrap: "wrap" }}>
+                    {[
+                      ["Nifty 5D", `${regime.nifty_ret_5d > 0 ? "+" : ""}${regime.nifty_ret_5d}%`, regime.nifty_ret_5d >= 0],
+                      ["Nifty vs 20MA", regime.signals?.nifty_below_ma20 ? "Below ⚠" : "Above ✓", !regime.signals?.nifty_below_ma20],
+                      ["VIX", regime.vix, regime.vix < 18],
+                    ].map(([label, val, isGood]) => (
+                      <div key={label}>
+                        <div style={{ fontSize: 10, color: G.muted, fontFamily: G.fontMono, marginBottom: 2 }}>{label}</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, fontFamily: G.fontMono, color: isGood ? G.green : G.red }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* BEARISH toggle */}
+              {isBearish && (
+                <div style={{ flexShrink: 0 }}>
+                  <button
+                    onClick={() => setShowAnyway(v => !v)}
+                    style={{
+                      background: showAnyway ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.05)",
+                      border: `1px solid ${showAnyway ? "rgba(239,68,68,0.4)" : G.border}`,
+                      borderRadius: 8, padding: "8px 14px", cursor: "pointer",
+                      fontSize: 12, fontFamily: G.fontMono, fontWeight: 600,
+                      color: showAnyway ? G.red : G.muted, transition: "all 0.2s",
+                    }}
+                  >
+                    {showAnyway ? "🔓 Showing picks" : "🔒 Show anyway"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Bearish locked screen */}
+        {isBearish && !showAnyway && (
+          <div style={{ marginTop: 16, padding: "40px 20px", textAlign: "center", background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 12 }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🛑</div>
+            <div style={{ fontFamily: G.fontDisplay, fontSize: 20, marginBottom: 8, color: G.text }}>Market Caution Mode Active</div>
+            <div style={{ fontSize: 13, color: G.muted, lineHeight: 1.7, maxWidth: 380, margin: "0 auto 20px" }}>
+              The market is in a downtrend. Historically, momentum picks lose money in falling markets as even strong stocks get dragged down.
+              <br /><br />
+              Caution mode is on by default to protect you. You can still view the picks if you understand the risk.
+            </div>
+            <button
+              onClick={() => setShowAnyway(true)}
+              style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 9, padding: "11px 20px", cursor: "pointer", fontSize: 13, fontFamily: G.fontBody, fontWeight: 600, color: G.red }}
+            >
+              I understand the risk — show picks anyway
+            </button>
+          </div>
+        )}
+
+        {/* Market note — only in non-bearish or if override on */}
+        {marketNote && showPicks && (
           <div style={{ marginTop: 14, padding: "12px 16px", background: G.accentDim, border: `1px solid ${G.accentBorder}`, borderRadius: 10, fontSize: 13, color: G.text, lineHeight: 1.6 }}>
             <span style={{ color: G.accent, fontWeight: 700, fontFamily: G.fontMono, fontSize: 11, display: "block", marginBottom: 4 }}>📡 TODAY'S MARKET THEME</span>
             {marketNote}
@@ -262,14 +343,17 @@ function DarkHorses() {
         )}
 
         {/* Meta info */}
-        <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap" }}>
-          {lastUpdated && <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>Last scan: {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
-          {nextRefresh && <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>Next refresh in: {nextRefresh}m</span>}
-          <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>Stocks scanned: 150</span>
-        </div>
+        {showPicks && (
+          <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap" }}>
+            {lastUpdated && <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>Last scan: {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
+            {nextRefresh && <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>Next refresh in: {nextRefresh}m</span>}
+            <span style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono }}>Stocks scanned: {stocksScanned}</span>
+          </div>
+        )}
       </div>
 
       {/* Conviction legend */}
+      {showPicks && (
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         {Object.entries(CONVICTION_COLORS).map(([k, c]) => (
           <span key={k} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontFamily: G.fontMono, color: G.muted }}>
@@ -278,15 +362,32 @@ function DarkHorses() {
           </span>
         ))}
       </div>
+      )}
 
-      {/* Picks grid */}
+      {/* Picks grid — only shown when not locked */}
+      {showPicks && (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* Bearish override warning banner */}
+        {isBearish && showAnyway && (
+          <div style={{ padding: "12px 16px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, fontSize: 13, color: G.red, lineHeight: 1.6, fontFamily: G.fontMono }}>
+            ⚠ CAUTION MODE OVERRIDDEN — You are viewing picks in a bearish market. All conviction ratings have been forced to SPECULATIVE. Do not size positions normally.
+          </div>
+        )}
+
         {picks.map((pick, i) => {
           const convColor = CONVICTION_COLORS[pick.conviction] || G.accent;
-          const ret5dPos = pick.ret_5d >= 0;
+          const rs5dPos = (pick.rs_5d ?? pick.ret_5d) >= 0;
           const ret1mPos = pick.ret_1m >= 0;
           return (
-            <div key={pick.ticker} className="dh-card slide-in" style={{ animationDelay: `${i * 0.05}s` }}>
+            <div key={pick.ticker} className="dh-card slide-in" style={{ animationDelay: `${i * 0.05}s`, borderColor: isBearish ? "rgba(239,68,68,0.2)" : undefined }}>
+
+              {/* Per-card bearish warning */}
+              {isBearish && (
+                <div style={{ marginBottom: 10, padding: "6px 10px", background: "rgba(239,68,68,0.08)", borderRadius: 6, fontSize: 11, color: G.red, fontFamily: G.fontMono }}>
+                  ⚠ High risk — bearish market conditions
+                </div>
+              )}
+
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 {/* Left: rank + name */}
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -307,11 +408,12 @@ function DarkHorses() {
                 </div>
               </div>
 
-              {/* Momentum metrics */}
+              {/* Momentum metrics — now shows relative strength */}
               <div style={{ display: "flex", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
                 {[
-                  ["5D", pick.ret_5d, ret5dPos],
-                  ["1M", pick.ret_1m, ret1mPos],
+                  ["5D Return", pick.ret_5d, pick.ret_5d >= 0],
+                  ["vs Nifty 5D", pick.rs_5d != null ? pick.rs_5d : "—", rs5dPos],
+                  ["1M Return", pick.ret_1m, ret1mPos],
                   ["Vol Spike", `${pick.vol_spike}x`, pick.vol_spike > 1.5],
                 ].map(([label, val, isPos]) => (
                   <div key={label}>
@@ -332,10 +434,12 @@ function DarkHorses() {
           );
         })}
       </div>
+      )}
 
       {/* Disclaimer */}
       <div style={{ marginTop: 20, fontSize: 11, color: "rgba(255,255,255,0.18)", textAlign: "center", fontFamily: G.fontMono, lineHeight: 1.6 }}>
-        ⚠ Dark Horses are momentum signals, not buy recommendations. Past momentum does not guarantee future returns.<br />
+        ⚠ Dark Horses are momentum signals, not buy recommendations. Signals use relative strength vs Nifty + OBV buy-pressure detection.<br />
+        Past momentum does not guarantee future returns. Market Caution mode activates automatically in downtrends.<br />
         SEBI Disclaimer: For educational purposes only. Not registered investment advice.
       </div>
     </div>
