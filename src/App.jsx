@@ -775,9 +775,35 @@ function AdvisorFlow() {
 }
 
 // ── App Shell ─────────────────────────────────────────────────────────────────
+const TICKER_FALLBACK = [
+  {name:"NIFTY 50",  price:23481.50, change_pct:0.62,  positive:true},
+  {name:"SENSEX",    price:77414.92, change_pct:0.58,  positive:true},
+  {name:"RELIANCE",  price:2912,     change_pct:1.4,   positive:true},
+  {name:"TCS",       price:3841,     change_pct:0.6,   positive:true},
+  {name:"HDFCBANK",  price:1642,     change_pct:0.8,   positive:true},
+  {name:"INFY",      price:1742,     change_pct:0.9,   positive:true},
+  {name:"BAJFINANCE",price:7124,     change_pct:2.1,   positive:true},
+  {name:"ZOMATO",    price:231,      change_pct:4.2,   positive:true},
+  {name:"ADANIPORTS",price:1342,     change_pct:3.1,   positive:true},
+  {name:"ITC",       price:458,      change_pct:1.1,   positive:true},
+];
+
 export default function App() {
   const [tab, setTab] = useState("advisor");
+  const [tickerItems, setTickerItems] = useState(TICKER_FALLBACK);
   const TABS = [["advisor","🧭 Advisor"],["darkhorses","🐴 Dark Horses"],["research","🔬 Research"]];
+
+  useEffect(() => {
+    const fetchTicker = () => {
+      fetch(`${API_BASE}/ticker`)
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(d => { if (d.items?.length) setTickerItems(d.items); })
+        .catch(() => {});
+    };
+    fetchTicker();
+    const id = setInterval(fetchTicker, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div style={{ minHeight:"100vh",background:G.bg,color:G.text,fontFamily:G.fontBody,display:"flex",flexDirection:"column" }}>
@@ -807,11 +833,11 @@ export default function App() {
       <div style={{ background:"rgba(0,0,0,0.4)",borderBottom:`1px solid ${G.border}`,overflow:"hidden",whiteSpace:"nowrap" }}>
         <div style={{ display:"inline-flex",animation:"ticker 30s linear infinite" }}>
           {[...Array(2)].map((_,rep)=>(
-            [["NIFTY 50","23,481.50","+0.62%"],["SENSEX","77,414.92","+0.58%"],["RELIANCE","2,912","+1.4%"],["TCS","3,841","+0.6%"],["HDFCBANK","1,642","+0.8%"],["INFY","1,742","+0.9%"],["BAJFINANCE","7,124","+2.1%"],["ZOMATO","231","+4.2%"],["ADANIPORTS","1,342","+3.1%"],["ITC","458","+1.1%"]].map(([n,p,c],i)=>(
+            tickerItems.map((item,i)=>(
               <span key={`${rep}-${i}`} style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 20px",fontSize:11,fontFamily:G.fontMono,borderRight:`1px solid ${G.border}` }}>
-                <span style={{ color:G.muted }}>{n}</span>
-                <span style={{ color:G.text,fontWeight:600 }}>{p}</span>
-                <span style={{ color:G.green,fontWeight:700 }}>{c}</span>
+                <span style={{ color:G.muted }}>{item.name}</span>
+                <span style={{ color:G.text,fontWeight:600 }}>{item.price.toLocaleString("en-IN",{maximumFractionDigits:2})}</span>
+                <span style={{ color:item.positive?G.green:G.red,fontWeight:700 }}>{item.positive?"+":""}{item.change_pct.toFixed(2)}%</span>
               </span>
             ))
           ))}
