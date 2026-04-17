@@ -425,6 +425,18 @@ function DarkHorses() {
                 ))}
               </div>
 
+              {/* Flag badge */}
+              {pick.flag === "LAST_LEGS" && (
+                <div style={{ marginTop: 10, padding: "8px 12px", background: `${G.accent}18`, border: `1px solid ${G.accent}40`, borderRadius: 8, fontSize: 12, color: G.accent, fontFamily: G.fontMono, fontWeight: 600 }}>
+                  ⚠ LAST LEGS — move is maturing, risk elevated
+                </div>
+              )}
+              {pick.flag === "EXHAUSTED" && (
+                <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8, fontSize: 12, color: G.red, fontFamily: G.fontMono, fontWeight: 600 }}>
+                  🛑 EXHAUSTED — ran too hard, risk/reward is poor
+                </div>
+              )}
+
               {/* AI signal */}
               <div style={{ marginTop: 10, padding: "10px 12px", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.15)", borderRadius: 8, fontSize: 13, color: G.subtext, lineHeight: 1.6 }}>
                 <span style={{ color: G.purple, fontFamily: G.fontMono, fontSize: 10, fontWeight: 700 }}>◈ AI SIGNAL  </span>
