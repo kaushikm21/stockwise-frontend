@@ -185,7 +185,11 @@ function DarkHorses() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [showAnyway, setShowAnyway] = useState(false); // override toggle for BEARISH
+  const [showAnyway, setShowAnyway] = useState(false);
+  const [bestOfBatch, setBestOfBatch] = useState([]);
+  const [waitSignal, setWaitSignal] = useState(false);
+  const [waitReason, setWaitReason] = useState("");
+  const [defensiveNote, setDefensiveNote] = useState("");
 
   const fetchPicks = async (forceRefresh = false) => {
     forceRefresh ? setRefreshing(true) : setLoading(true);
@@ -201,7 +205,11 @@ function DarkHorses() {
       setStocksScanned(data.stocks_scanned || 150);
       setNextRefresh(data.next_refresh_mins || 240);
       setLastUpdated(new Date());
-      setShowAnyway(false); // reset override on fresh fetch
+      setShowAnyway(false);
+      setBestOfBatch(data.best_of_batch || []);
+      setWaitSignal(data.wait_signal || false);
+      setWaitReason(data.wait_reason || "");
+      setDefensiveNote(data.defensive_note || "");
     } catch (e) {
       setError(e.message);
     }
@@ -239,7 +247,7 @@ function DarkHorses() {
         ))}
       </div>
       <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: G.muted, fontFamily: G.fontMono }}>
-        This takes ~60–90 seconds — Stockwise is analysing 150 stocks 🔍
+        This takes ~60–90 seconds — Claude is analysing 150 stocks 🔍
       </div>
     </div>
   );
@@ -334,9 +342,28 @@ function DarkHorses() {
           </div>
         )}
 
+        {/* Wait signal — show prominently when Claude says wait */}
+        {waitSignal && showPicks && (
+          <div style={{ marginTop: 14, padding: "14px 16px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 16 }}>⏸</span>
+              <span style={{ fontFamily: G.fontMono, fontWeight: 700, fontSize: 11, color: G.red }}>CONSIDER WAITING</span>
+            </div>
+            <div style={{ fontSize: 13, color: G.text, lineHeight: 1.6 }}>{waitReason}</div>
+          </div>
+        )}
+
+        {/* Defensive note — shown in cautious/bearish */}
+        {defensiveNote && showPicks && (
+          <div style={{ marginTop: 10, padding: "10px 14px", background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 10, fontSize: 12, color: "rgba(147,197,253,0.9)", lineHeight: 1.6, fontFamily: G.fontBody }}>
+            <span style={{ fontFamily: G.fontMono, fontWeight: 700, fontSize: 10, color: "#60a5fa", display: "inline-block", marginBottom: 3 }}>🛡 DEFENSIVE ALTERNATIVE</span><br/>
+            {defensiveNote}
+          </div>
+        )}
+
         {/* Market note — only in non-bearish or if override on */}
         {marketNote && showPicks && (
-          <div style={{ marginTop: 14, padding: "12px 16px", background: G.accentDim, border: `1px solid ${G.accentBorder}`, borderRadius: 10, fontSize: 13, color: G.text, lineHeight: 1.6 }}>
+          <div style={{ marginTop: 10, padding: "12px 16px", background: G.accentDim, border: `1px solid ${G.accentBorder}`, borderRadius: 10, fontSize: 13, color: G.text, lineHeight: 1.6 }}>
             <span style={{ color: G.accent, fontWeight: 700, fontFamily: G.fontMono, fontSize: 11, display: "block", marginBottom: 4 }}>📡 TODAY'S MARKET THEME</span>
             {marketNote}
           </div>
@@ -378,13 +405,25 @@ function DarkHorses() {
           const convColor = CONVICTION_COLORS[pick.conviction] || G.accent;
           const rs5dPos = (pick.rs_5d ?? pick.ret_5d) >= 0;
           const ret1mPos = pick.ret_1m >= 0;
+          const isBestOfBatch = bestOfBatch.includes(pick.ticker);
           return (
-            <div key={pick.ticker} className="dh-card slide-in" style={{ animationDelay: `${i * 0.05}s`, borderColor: isBearish ? "rgba(239,68,68,0.2)" : undefined }}>
+            <div key={pick.ticker} className="dh-card slide-in" style={{
+              animationDelay: `${i * 0.05}s`,
+              borderColor: isBestOfBatch ? "rgba(245,158,11,0.5)" : isBearish ? "rgba(239,68,68,0.2)" : undefined,
+              background: isBestOfBatch ? "rgba(245,158,11,0.03)" : undefined,
+            }}>
+
+              {/* Best of batch crown */}
+              {isBestOfBatch && (
+                <div style={{ marginBottom: 10, padding: "5px 10px", background: "rgba(245,158,11,0.1)", borderRadius: 6, fontSize: 11, color: G.accent, fontFamily: G.fontMono, fontWeight: 700 }}>
+                  👑 BEST OF BATCH — strongest signal in this scan
+                </div>
+              )}
 
               {/* Per-card bearish warning */}
               {isBearish && (
-                <div style={{ marginBottom: 10, padding: "6px 10px", background: "rgba(239,68,68,0.08)", borderRadius: 6, fontSize: 11, color: G.red, fontFamily: G.fontMono }}>
-                  ⚠ High risk — bearish market conditions
+                <div style={{ marginBottom: 8, padding: "6px 10px", background: "rgba(239,68,68,0.08)", borderRadius: 6, fontSize: 11, color: G.red, fontFamily: G.fontMono }}>
+                  {isBestOfBatch ? "⚠ Best pick in bearish market — still elevated risk" : "⚠ High risk — bearish market conditions"}
                 </div>
               )}
 
@@ -409,7 +448,7 @@ function DarkHorses() {
               </div>
 
               {/* Momentum metrics — now shows relative strength */}
-              <div style={{ display: "flex", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 14, marginTop: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
                 {[
                   ["5D Return", pick.ret_5d, pick.ret_5d >= 0],
                   ["vs Nifty 5D", pick.rs_5d != null ? pick.rs_5d : "—", rs5dPos],
@@ -423,22 +462,46 @@ function DarkHorses() {
                     </div>
                   </div>
                 ))}
+
+                {/* Signal strength bar */}
+                {pick.signal_strength != null && (
+                  <div style={{ marginLeft: "auto" }}>
+                    <div style={{ fontSize: 10, color: G.muted, fontFamily: G.fontMono, marginBottom: 4 }}>SIGNAL STRENGTH</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 80, height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{
+                          width: `${(pick.signal_strength / 10) * 100}%`,
+                          height: "100%",
+                          borderRadius: 3,
+                          background: pick.signal_strength >= 7 ? G.green : pick.signal_strength >= 4 ? G.accent : G.red,
+                          transition: "width 0.4s ease",
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, fontFamily: G.fontMono, color: pick.signal_strength >= 7 ? G.green : pick.signal_strength >= 4 ? G.accent : G.red }}>
+                        {pick.signal_strength}/10
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Flag badge */}
-              {pick.flag === "LAST_LEGS" && (
-                <div style={{ marginTop: 10, padding: "8px 12px", background: `${G.accent}18`, border: `1px solid ${G.accent}40`, borderRadius: 8, fontSize: 12, color: G.accent, fontFamily: G.fontMono, fontWeight: 600 }}>
-                  ⚠ LAST LEGS — move is maturing, risk elevated
-                </div>
-              )}
-              {pick.flag === "EXHAUSTED" && (
-                <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8, fontSize: 12, color: G.red, fontFamily: G.fontMono, fontWeight: 600 }}>
-                  🛑 EXHAUSTED — ran too hard, risk/reward is poor
+              {pick.flag && pick.flag !== "FRESH" && (
+                <div style={{ marginTop: 10, padding: "6px 10px", borderRadius: 6, fontSize: 11, fontFamily: G.fontMono, fontWeight: 700,
+                  background: pick.flag === "LAST_LEGS" ? "rgba(245,158,11,0.08)" : "rgba(239,68,68,0.08)",
+                  border: `1px solid ${pick.flag === "LAST_LEGS" ? "rgba(245,158,11,0.3)" : "rgba(239,68,68,0.3)"}`,
+                  color: pick.flag === "LAST_LEGS" ? G.accent : G.red,
+                  display: "flex", alignItems: "center", gap: 6,
+                }}>
+                  {pick.flag === "LAST_LEGS" ? "⚠ LAST LEGS" : "🛑 EXHAUSTED"}
+                  <span style={{ fontWeight: 400, color: G.muted, fontSize: 10 }}>
+                    {pick.flag === "LAST_LEGS" ? "— move is maturing, risk is elevated" : "— ran too hard, risk/reward is poor"}
+                  </span>
                 </div>
               )}
 
               {/* AI signal */}
-              <div style={{ marginTop: 10, padding: "10px 12px", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.15)", borderRadius: 8, fontSize: 13, color: G.subtext, lineHeight: 1.6 }}>
+              <div style={{ marginTop: 8, padding: "10px 12px", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.15)", borderRadius: 8, fontSize: 13, color: G.subtext, lineHeight: 1.6 }}>
                 <span style={{ color: G.purple, fontFamily: G.fontMono, fontSize: 10, fontWeight: 700 }}>◈ AI SIGNAL  </span>
                 {pick.signal}
               </div>
@@ -787,35 +850,9 @@ function AdvisorFlow() {
 }
 
 // ── App Shell ─────────────────────────────────────────────────────────────────
-const TICKER_FALLBACK = [
-  {name:"NIFTY 50",  price:23481.50, change_pct:0.62,  positive:true},
-  {name:"SENSEX",    price:77414.92, change_pct:0.58,  positive:true},
-  {name:"RELIANCE",  price:2912,     change_pct:1.4,   positive:true},
-  {name:"TCS",       price:3841,     change_pct:0.6,   positive:true},
-  {name:"HDFCBANK",  price:1642,     change_pct:0.8,   positive:true},
-  {name:"INFY",      price:1742,     change_pct:0.9,   positive:true},
-  {name:"BAJFINANCE",price:7124,     change_pct:2.1,   positive:true},
-  {name:"ZOMATO",    price:231,      change_pct:4.2,   positive:true},
-  {name:"ADANIPORTS",price:1342,     change_pct:3.1,   positive:true},
-  {name:"ITC",       price:458,      change_pct:1.1,   positive:true},
-];
-
 export default function App() {
   const [tab, setTab] = useState("advisor");
-  const [tickerItems, setTickerItems] = useState(TICKER_FALLBACK);
   const TABS = [["advisor","🧭 Advisor"],["darkhorses","🐴 Dark Horses"],["research","🔬 Research"]];
-
-  useEffect(() => {
-    const fetchTicker = () => {
-      fetch(`${API_BASE}/ticker`)
-        .then(r => r.ok ? r.json() : Promise.reject())
-        .then(d => { if (d.items?.length) setTickerItems(d.items); })
-        .catch(() => {});
-    };
-    fetchTicker();
-    const id = setInterval(fetchTicker, 5 * 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
 
   return (
     <div style={{ minHeight:"100vh",background:G.bg,color:G.text,fontFamily:G.fontBody,display:"flex",flexDirection:"column" }}>
@@ -845,11 +882,11 @@ export default function App() {
       <div style={{ background:"rgba(0,0,0,0.4)",borderBottom:`1px solid ${G.border}`,overflow:"hidden",whiteSpace:"nowrap" }}>
         <div style={{ display:"inline-flex",animation:"ticker 30s linear infinite" }}>
           {[...Array(2)].map((_,rep)=>(
-            tickerItems.map((item,i)=>(
+            [["NIFTY 50","23,481.50","+0.62%"],["SENSEX","77,414.92","+0.58%"],["RELIANCE","2,912","+1.4%"],["TCS","3,841","+0.6%"],["HDFCBANK","1,642","+0.8%"],["INFY","1,742","+0.9%"],["BAJFINANCE","7,124","+2.1%"],["ZOMATO","231","+4.2%"],["ADANIPORTS","1,342","+3.1%"],["ITC","458","+1.1%"]].map(([n,p,c],i)=>(
               <span key={`${rep}-${i}`} style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"6px 20px",fontSize:11,fontFamily:G.fontMono,borderRight:`1px solid ${G.border}` }}>
-                <span style={{ color:G.muted }}>{item.name}</span>
-                <span style={{ color:G.text,fontWeight:600 }}>{item.price.toLocaleString("en-IN",{maximumFractionDigits:2})}</span>
-                <span style={{ color:item.positive?G.green:G.red,fontWeight:700 }}>{item.positive?"+":""}{item.change_pct.toFixed(2)}%</span>
+                <span style={{ color:G.muted }}>{n}</span>
+                <span style={{ color:G.text,fontWeight:600 }}>{p}</span>
+                <span style={{ color:G.green,fontWeight:700 }}>{c}</span>
               </span>
             ))
           ))}
