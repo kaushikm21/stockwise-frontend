@@ -485,20 +485,26 @@ function DarkHorses() {
                 )}
               </div>
 
-              {/* Flag badge */}
-              {pick.flag && pick.flag !== "FRESH" && (
-                <div style={{ marginTop: 10, padding: "6px 10px", borderRadius: 6, fontSize: 11, fontFamily: G.fontMono, fontWeight: 700,
-                  background: pick.flag === "LAST_LEGS" ? "rgba(245,158,11,0.08)" : "rgba(239,68,68,0.08)",
-                  border: `1px solid ${pick.flag === "LAST_LEGS" ? "rgba(245,158,11,0.3)" : "rgba(239,68,68,0.3)"}`,
-                  color: pick.flag === "LAST_LEGS" ? G.accent : G.red,
-                  display: "flex", alignItems: "center", gap: 6,
-                }}>
-                  {pick.flag === "LAST_LEGS" ? "⚠ LAST LEGS" : "🛑 EXHAUSTED"}
-                  <span style={{ fontWeight: 400, color: G.muted, fontSize: 10 }}>
-                    {pick.flag === "LAST_LEGS" ? "— move is maturing, risk is elevated" : "— ran too hard, risk/reward is poor"}
-                  </span>
-                </div>
-              )}
+              {/* Flag badge — all 5 flag types */}
+              {pick.flag && pick.flag !== "FRESH" && (() => {
+                const flagConfig = {
+                  LAST_LEGS:    { icon: "⚠",  color: G.accent,  bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.3)",  text: "LAST LEGS",    desc: "move is maturing, risk elevated" },
+                  EXHAUSTED:    { icon: "🛑", color: G.red,     bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.3)",   text: "EXHAUSTED",    desc: "ran too hard, poor risk/reward" },
+                  DISTRIBUTION: { icon: "📉", color: G.red,     bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.3)",   text: "DISTRIBUTION", desc: "more volume on down days — selling pressure building" },
+                  BOUNCE:       { icon: "↩",  color: "#f97316", bg: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.3)",  text: "BOUNCE",       desc: "5d spike without 1m trend — mean reversion risk" },
+                };
+                const fc = flagConfig[pick.flag];
+                if (!fc) return null;
+                return (
+                  <div style={{ marginTop: 10, padding: "6px 10px", borderRadius: 6, fontSize: 11, fontFamily: G.fontMono, fontWeight: 700,
+                    background: fc.bg, border: `1px solid ${fc.border}`, color: fc.color,
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}>
+                    {fc.icon} {fc.text}
+                    <span style={{ fontWeight: 400, color: G.muted, fontSize: 10 }}>— {fc.desc}</span>
+                  </div>
+                );
+              })()}
 
               {/* AI signal */}
               <div style={{ marginTop: 8, padding: "10px 12px", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.15)", borderRadius: 8, fontSize: 13, color: G.subtext, lineHeight: 1.6 }}>
