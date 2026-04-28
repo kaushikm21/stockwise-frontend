@@ -166,6 +166,130 @@ const ChartTooltip = ({ active, payload, label }) => {
   );
 };
 
+// ── Auth helpers ─────────────────────────────────────────────────────────────
+const TOKEN_KEY = "stockwise_token";
+const TOKEN_USER_KEY = "stockwise_user";
+const TOKEN_EXPIRY_KEY = "stockwise_token_expiry";
+
+function saveAuth(token, username) {
+  const expiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(TOKEN_USER_KEY, username);
+  localStorage.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
+}
+
+function getStoredAuth() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+  const username = localStorage.getItem(TOKEN_USER_KEY);
+  if (!token || !expiry) return null;
+  if (Date.now() > parseInt(expiry)) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_USER_KEY);
+    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+    return null;
+  }
+  return { token, username };
+}
+
+function clearAuth() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_USER_KEY);
+  localStorage.removeItem(TOKEN_EXPIRY_KEY);
+}
+
+
+// ── Login Gate ────────────────────────────────────────────────────────────────
+function LoginGate({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleLogin = async () => {
+    if (!username.trim() || !password.trim()) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username.trim().toLowerCase(), password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.detail || "Invalid username or password");
+        setLoading(false);
+        return;
+      }
+      saveAuth(data.token, data.username);
+      onLogin(data.token, data.username);
+    } catch (e) {
+      setError("Connection error — please try again");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ maxWidth: 360, margin: "40px auto", padding: "0 20px" }}>
+      <div className="card" style={{ padding: 28 }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ width: 44, height: 44, background: `linear-gradient(135deg,#d97706,${G.accent})`, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, margin: "0 auto 12px" }}>🐴</div>
+          <div style={{ fontFamily: G.fontDisplay, fontSize: 20, marginBottom: 4 }}>Dark Horses Access</div>
+          <div style={{ fontSize: 12, color: G.muted, fontFamily: G.fontMono }}>Whitelisted users only</div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+          <div>
+            <label style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono, letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>USERNAME</label>
+            <input
+              className="inp"
+              placeholder="your username"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleLogin()}
+              autoCapitalize="none"
+              autoCorrect="off"
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: G.muted, fontFamily: G.fontMono, letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>PASSWORD</label>
+            <input
+              className="inp"
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleLogin()}
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ marginBottom: 14, padding: "8px 12px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, fontSize: 12, color: G.red, fontFamily: G.fontMono }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        <button
+          className="btn"
+          style={{ width: "100%" }}
+          disabled={!username.trim() || !password.trim() || loading}
+          onClick={handleLogin}
+        >
+          {loading ? "Signing in…" : "Sign In →"}
+        </button>
+
+        <div style={{ marginTop: 16, fontSize: 11, color: "rgba(255,255,255,0.2)", textAlign: "center", fontFamily: G.fontMono, lineHeight: 1.6 }}>
+          Access is by invitation only.<br/>
+          Sessions last 7 days.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ── Dark Horses Tab ───────────────────────────────────────────────────────────
 const CONVICTION_COLORS = { HIGH: "#22c55e", MEDIUM: "#f59e0b", SPECULATIVE: "#8b5cf6" };
 
@@ -176,6 +300,20 @@ const REGIME_CONFIG = {
 };
 
 function DarkHorses() {
+  // ── Auth state ──────────────────────────────────────────────────────────────
+  const [auth, setAuth] = useState(() => getStoredAuth());
+
+  const handleLogin = (token, username) => setAuth({ token, username });
+  const handleLogout = () => { clearAuth(); setAuth(null); };
+
+  // Show login gate if not authenticated
+  if (!auth) return <LoginGate onLogin={handleLogin} />;
+
+  return <DarkHorsesInner auth={auth} onLogout={handleLogout} />;
+}
+
+
+function DarkHorsesInner({ auth, onLogout }) {
   const [picks, setPicks] = useState([]);
   const [marketNote, setMarketNote] = useState("");
   const [regime, setRegime] = useState(null);
@@ -270,10 +408,15 @@ function DarkHorses() {
             <div style={{ fontFamily: G.fontDisplay, fontSize: "clamp(22px,5vw,32px)", marginBottom: 4 }}>🐴 Dark Horses</div>
             <div style={{ color: G.muted, fontSize: 13 }}>AI-spotted early momentum signals across NSE · Relative strength vs Nifty</div>
           </div>
-          <button className="btn-ghost" onClick={() => fetchPicks(true)} disabled={refreshing} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ display: "inline-block" }} className={refreshing ? "spin" : ""}>↻</span>
-            {refreshing ? "Scanning…" : "Refresh"}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn-ghost" onClick={() => fetchPicks(true)} disabled={refreshing} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ display: "inline-block" }} className={refreshing ? "spin" : ""}>↻</span>
+              {refreshing ? "Scanning…" : "Refresh"}
+            </button>
+            <button className="btn-ghost" onClick={onLogout} style={{ fontSize: 11, color: G.muted }}>
+              Sign out
+            </button>
+          </div>
         </div>
 
         {/* Market Regime Banner */}
