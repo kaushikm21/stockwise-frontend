@@ -633,7 +633,9 @@ function DarkHorsesInner({ auth, onLogout }) {
                 const flagConfig = {
                   LAST_LEGS:    { icon: "⚠",  color: G.accent,  bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.3)",  text: "LAST LEGS",    desc: "move is maturing, risk elevated" },
                   EXHAUSTED:    { icon: "🛑", color: G.red,     bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.3)",   text: "EXHAUSTED",    desc: "ran too hard, poor risk/reward" },
-                  DISTRIBUTION: { icon: "📉", color: G.red,     bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.3)",   text: "DISTRIBUTION", desc: "more volume on down days — selling pressure building" },
+                  HARD_CAP:     { icon: "🚫", color: G.red,     bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.3)",   text: "CROWDED",      desc: "10+ consecutive picks — crowd has noticed, move is late" },
+                  DOWNTREND:    { icon: "📉", color: "#f97316", bg: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.3)",  text: "DOWNTREND",    desc: "price below 20-day MA — structural weakness" },
+                  DISTRIBUTION: { icon: "⬇",  color: G.red,     bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.3)",   text: "DISTRIBUTION", desc: "more volume on down days — selling pressure building" },
                   BOUNCE:       { icon: "↩",  color: "#f97316", bg: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.3)",  text: "BOUNCE",       desc: "5d spike without 1m trend — mean reversion risk" },
                 };
                 const fc = flagConfig[pick.flag];
