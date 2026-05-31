@@ -236,7 +236,7 @@ function LoginGate({ onLogin }) {
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ width: 44, height: 44, background: `linear-gradient(135deg,#d97706,${G.accent})`, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, margin: "0 auto 12px" }}>🐴</div>
           <div style={{ fontFamily: G.fontDisplay, fontSize: 20, marginBottom: 4 }}>Dark Horses Access</div>
-          <div style={{ fontSize: 12, color: G.muted, fontFamily: G.fontMono }}>Whitelisted users only</div>
+          <div style={{ fontSize: 12, color: G.muted, fontFamily: G.fontMono }}>India 🐴 &amp; US 🇺🇸 · Whitelisted users only</div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
@@ -296,10 +296,10 @@ const CONVICTION_COLORS = { HIGH: "#22c55e", MEDIUM: "#f59e0b", SPECULATIVE: "#8
 const REGIME_CONFIG = {
   HEALTHY:  { color: "#22c55e", bg: "rgba(34,197,94,0.08)",  border: "rgba(34,197,94,0.25)",  icon: "🟢", label: "Market Healthy",  subtext: "Conditions are favourable for momentum picks." },
   CAUTIOUS: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)", icon: "🟡", label: "Market Cautious",  subtext: "Early weakness detected. Picks are more selective — size positions carefully." },
-  BEARISH:  { color: "#ef4444", bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.25)",  icon: "🔴", label: "Market Caution Mode", subtext: "Nifty is in a downtrend. Momentum picks underperform in falling markets. High risk of loss." },
+  BEARISH:  { color: "#ef4444", bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.25)",  icon: "🔴", label: "Market Caution Mode", subtext: "Market is in a downtrend. Momentum picks underperform in falling markets. High risk of loss." },
 };
 
-function DarkHorses() {
+function DarkHorses({ market = "india" }) {
   // ── Auth state ──────────────────────────────────────────────────────────────
   const [auth, setAuth] = useState(() => getStoredAuth());
 
@@ -309,15 +309,22 @@ function DarkHorses() {
   // Show login gate if not authenticated
   if (!auth) return <LoginGate onLogin={handleLogin} />;
 
-  return <DarkHorsesInner auth={auth} onLogout={handleLogout} />;
+  return <DarkHorsesInner auth={auth} onLogout={handleLogout} market={market} />;
 }
 
 
-function DarkHorsesInner({ auth, onLogout }) {
+function DarkHorsesInner({ auth, onLogout, market = "india" }) {
+  const isUS = market === "us";
+  const currency = isUS ? "$" : "₹";
+  const benchmark = isUS ? "S&P 500" : "Nifty";
+  const marketLabel = isUS ? "🇺🇸 US Dark Horses" : "🐴 Dark Horses";
+  const stockCount = isUS ? 600 : 150;
+  const endpoint = isUS ? "dark-horses-us" : "dark-horses";
+  const authHeader = auth?.token ? { "Authorization": `Bearer ${auth.token}` } : {};
   const [picks, setPicks] = useState([]);
   const [marketNote, setMarketNote] = useState("");
   const [regime, setRegime] = useState(null);
-  const [stocksScanned, setStocksScanned] = useState(150);
+  const [stocksScanned, setStocksScanned] = useState(stockCount);
   const [loading, setLoading] = useState(true);
   const [nextRefresh, setNextRefresh] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -333,8 +340,8 @@ function DarkHorsesInner({ auth, onLogout }) {
     forceRefresh ? setRefreshing(true) : setLoading(true);
     setError(null);
     try {
-      const url = forceRefresh ? `${API_BASE}/dark-horses?refresh=true` : `${API_BASE}/dark-horses`;
-      const res = await fetch(url);
+      const url = forceRefresh ? `${API_BASE}/${endpoint}?refresh=true` : `${API_BASE}/${endpoint}`;
+      const res = await fetch(url, { headers: authHeader });
       const data = await res.json();
       if (data.error && (!data.picks || data.picks.length === 0)) throw new Error(data.error);
       setPicks(data.picks || []);
@@ -369,8 +376,8 @@ function DarkHorsesInner({ auth, onLogout }) {
   if (loading) return (
     <div>
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: G.fontDisplay, fontSize: "clamp(22px,5vw,32px)", marginBottom: 6 }}>🐴 Dark Horses</div>
-        <div style={{ color: G.muted, fontSize: 13 }}>Scanning 150 NSE stocks for early momentum signals…</div>
+        <div style={{ fontFamily: G.fontDisplay, fontSize: "clamp(22px,5vw,32px)", marginBottom: 6 }}>{marketLabel}</div>
+        <div style={{ color: G.muted, fontSize: 13 }}>Scanning {stockCount} {isUS ? "US" : "NSE"} stocks for early momentum signals…</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {[...Array(5)].map((_, i) => (
@@ -385,7 +392,7 @@ function DarkHorsesInner({ auth, onLogout }) {
         ))}
       </div>
       <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: G.muted, fontFamily: G.fontMono }}>
-        This takes ~60–90 seconds — Claude is analysing 150 stocks 🔍
+        This takes ~{isUS ? "3–4 minutes" : "60–90 seconds"} — Claude is analysing {stockCount} stocks 🔍
       </div>
     </div>
   );
@@ -405,8 +412,8 @@ function DarkHorsesInner({ auth, onLogout }) {
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
-            <div style={{ fontFamily: G.fontDisplay, fontSize: "clamp(22px,5vw,32px)", marginBottom: 4 }}>🐴 Dark Horses</div>
-            <div style={{ color: G.muted, fontSize: 13 }}>AI-spotted early momentum signals across NSE · Relative strength vs Nifty</div>
+            <div style={{ fontFamily: G.fontDisplay, fontSize: "clamp(22px,5vw,32px)", marginBottom: 4 }}>{marketLabel}</div>
+            <div style={{ color: G.muted, fontSize: 13 }}>AI-spotted early momentum signals · Relative strength vs {benchmark}</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn-ghost" onClick={() => fetchPicks(true)} disabled={refreshing} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -664,7 +671,7 @@ function DarkHorsesInner({ auth, onLogout }) {
 
       {/* Disclaimer */}
       <div style={{ marginTop: 20, fontSize: 11, color: "rgba(255,255,255,0.18)", textAlign: "center", fontFamily: G.fontMono, lineHeight: 1.6 }}>
-        ⚠ Dark Horses are momentum signals, not buy recommendations. Signals use relative strength vs Nifty + OBV buy-pressure detection.<br />
+        ⚠ Dark Horses are momentum signals, not buy recommendations. Signals use relative strength vs {benchmark} + OBV buy-pressure detection.<br />
         Past momentum does not guarantee future returns. Market Caution mode activates automatically in downtrends.<br />
         SEBI Disclaimer: For educational purposes only. Not registered investment advice.
       </div>
@@ -1003,7 +1010,7 @@ function AdvisorFlow() {
 // ── App Shell ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("advisor");
-  const TABS = [["advisor","🧭 Advisor"],["darkhorses","🐴 Dark Horses"],["research","🔬 Research"]];
+  const TABS = [["advisor","🧭 Advisor"],["darkhorses","🐴 India"],["darkhorses-us","🇺🇸 US"],["research","🔬 Research"]];
 
   return (
     <div style={{ minHeight:"100vh",background:G.bg,color:G.text,fontFamily:G.fontBody,display:"flex",flexDirection:"column" }}>
@@ -1047,7 +1054,8 @@ export default function App() {
       {/* Content */}
       <div style={{ flex:1,maxWidth:720,margin:"0 auto",width:"100%",padding:"28px 20px 48px" }}>
         {tab==="advisor"&&<AdvisorFlow/>}
-        {tab==="darkhorses"&&<DarkHorses/>}
+        {tab==="darkhorses"&&<DarkHorses market="india" />}
+        {tab==="darkhorses-us"&&<DarkHorses market="us" />}
         {tab==="research"&&<ResearchTerminal/>}
       </div>
 
