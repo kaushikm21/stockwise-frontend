@@ -322,6 +322,8 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
   const endpoint = isUS ? "dark-horses-us" : "dark-horses";
   const authHeader = auth?.token ? { "Authorization": `Bearer ${auth.token}` } : {};
   const [picks, setPicks] = useState([]);
+  const [yoyoPicks, setYoyoPicks] = useState([]);
+  const [showYoyo, setShowYoyo] = useState(false);
   const [marketNote, setMarketNote] = useState("");
   const [regime, setRegime] = useState(null);
   const [stocksScanned, setStocksScanned] = useState(stockCount);
@@ -345,6 +347,7 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
       const data = await res.json();
       if (data.error && (!data.picks || data.picks.length === 0)) throw new Error(data.error);
       setPicks(data.picks || []);
+      setYoyoPicks(data.yoyo_picks || []);
       setMarketNote(data.market_note || "");
       setRegime(data.regime || null);
       setStocksScanned(data.stocks_scanned || 150);
@@ -667,6 +670,54 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
           );
         })}
       </div>
+      )}
+
+      {/* ── YoYo Watch Section ─────────────────────────────────────── */}
+      {yoyoPicks.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <button
+            onClick={() => setShowYoyo(v => !v)}
+            style={{ width: "100%", background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: 10, padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#fbbf24", fontFamily: G.fontMono, fontSize: 12, fontWeight: 600 }}
+          >
+            <span>〰️ Yo-Yo Watch ({yoyoPicks.length})</span>
+            <span style={{ fontSize: 10, color: G.muted, fontWeight: 400, marginLeft: 8, flex: 1, textAlign: "left", paddingLeft: 12 }}>
+              Stocks that have broken their thesis before — bounced, then fell again
+            </span>
+            <span style={{ fontSize: 14 }}>{showYoyo ? "▲" : "▼"}</span>
+          </button>
+          {showYoyo && (
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ padding: "8px 14px", background: "rgba(251,191,36,0.04)", border: "1px solid rgba(251,191,36,0.12)", borderRadius: 8, fontSize: 11, color: "#fbbf24", fontFamily: G.fontMono, lineHeight: 1.6 }}>
+                These stocks fell &gt;5% from their first recommended price, recovered, then fell again. Genuine recovery or false start? You decide.
+              </div>
+              {yoyoPicks.map((pick, i) => (
+                <div key={i} className="card" style={{ padding: 16, borderLeft: "3px solid #fbbf24", opacity: 0.9 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                    <div>
+                      <span style={{ fontFamily: G.fontMono, fontWeight: 700, fontSize: 14, color: "#fbbf24" }}>{pick.ticker}</span>
+                      <span style={{ color: G.muted, fontSize: 11, marginLeft: 8 }}>{pick.name}</span>
+                      <div style={{ fontSize: 10, color: G.muted, marginTop: 2 }}>{pick.sector}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: G.fontMono, fontSize: 15, fontWeight: 700 }}>{pick.price}</div>
+                      <div style={{ fontSize: 10, color: "#fbbf24", fontFamily: G.fontMono, marginTop: 2 }}>↕ {pick.yoyo_count}x yo-yo</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, fontSize: 11, fontFamily: G.fontMono, color: G.muted, marginBottom: 8 }}>
+                    <span>5D <span style={{ color: (pick.ret_5d||0) > 0 ? G.green : G.red }}>{(pick.ret_5d||0) > 0 ? "+" : ""}{(pick.ret_5d||0).toFixed(1)}%</span></span>
+                    <span>1M <span style={{ color: (pick.ret_1m||0) > 0 ? G.green : G.red }}>{(pick.ret_1m||0) > 0 ? "+" : ""}{(pick.ret_1m||0).toFixed(1)}%</span></span>
+                    <span>vs {benchmark} <span style={{ color: (pick.rs_5d||0) > 0 ? G.green : G.red }}>{(pick.rs_5d||0) > 0 ? "+" : ""}{(pick.rs_5d||0).toFixed(1)}%</span></span>
+                  </div>
+                  {pick.signal && (
+                    <div style={{ fontSize: 11, color: G.muted, lineHeight: 1.6, padding: "8px 10px", background: "rgba(255,255,255,0.03)", borderRadius: 6, borderLeft: "2px solid rgba(251,191,36,0.3)" }}>
+                      <span style={{ color: "#fbbf24", fontSize: 10, fontWeight: 600, fontFamily: G.fontMono }}>YO-YO WATCH · </span>{pick.signal}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Disclaimer */}
