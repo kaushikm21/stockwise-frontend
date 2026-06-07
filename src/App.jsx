@@ -337,6 +337,57 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
   const [waitSignal, setWaitSignal] = useState(false);
   const [waitReason, setWaitReason] = useState("");
   const [defensiveNote, setDefensiveNote] = useState("");
+  const [heldTickers, setHeldTickers] = useState(new Set());
+  const [buyingTicker, setBuyingTicker] = useState(null);
+  const [buySuccess, setBuySuccess] = useState(null);
+
+  // Load held tickers from portfolio on mount (India only)
+  const loadHeldTickers = async () => {
+    if (isUS || !auth?.token) return;
+    try {
+      const res = await fetch(`${API_BASE}/portfolio/positions`, {
+        headers: { "Authorization": `Bearer ${auth.token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHeldTickers(new Set((data.positions || []).map(p => p.ticker)));
+      }
+    } catch (e) {}
+  };
+
+  const handleBuy = async (pick, niftyPrice) => {
+    if (!auth?.token || isUS) return;
+    setBuyingTicker(pick.ticker);
+    try {
+      const res = await fetch(`${API_BASE}/portfolio/buy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${auth.token}` },
+        body: JSON.stringify({
+          ticker:       pick.ticker,
+          company_name: pick.name,
+          entry_price:  parseFloat(String(pick.price).replace(/[₹,]/g, "")),
+          entry_signal: pick.flag,
+          entry_flag:   pick.flag,
+          entry_nifty:  niftyPrice || 0,
+          sector:       pick.sector,
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setHeldTickers(prev => new Set([...prev, pick.ticker]));
+        setBuySuccess(pick.ticker);
+        setTimeout(() => setBuySuccess(null), 3000);
+      } else {
+        alert(data.detail || "Could not record buy");
+      }
+    } catch (e) {
+      alert("Network error — could not record buy");
+    } finally {
+      setBuyingTicker(null);
+    }
+  };
+
+  useEffect(() => { loadHeldTickers(); }, []);
 
   const fetchPicks = async (forceRefresh = false) => {
     forceRefresh ? setRefreshing(true) : setLoading(true);
@@ -689,6 +740,35 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
                 <span style={{ color: G.purple, fontFamily: G.fontMono, fontSize: 10, fontWeight: 700 }}>◈ AI SIGNAL  </span>
                 {pick.signal}
               </div>
+
+              {/* Buy button — India only */}
+              {!isUS && (
+                <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                  {heldTickers.has(pick.ticker) ? (
+                    <span style={{ fontSize: 11, fontFamily: G.fontMono, color: G.green, display: "flex", alignItems: "center", gap: 4 }}>
+                      ✓ IN PORTFOLIO
+                    </span>
+                  ) : buySuccess === pick.ticker ? (
+                    <span style={{ fontSize: 11, fontFamily: G.fontMono, color: G.green }}>
+                      ✓ Recorded!
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleBuy(pick, regime?.nifty_price || 0)}
+                      disabled={buyingTicker === pick.ticker}
+                      style={{
+                        padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(16,185,129,0.4)",
+                        background: "rgba(16,185,129,0.08)", color: G.green, fontSize: 11,
+                        fontFamily: G.fontMono, fontWeight: 700, cursor: "pointer",
+                        opacity: buyingTicker === pick.ticker ? 0.5 : 1,
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {buyingTicker === pick.ticker ? "Recording…" : "+ Buy"}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -748,6 +828,303 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
         ⚠ Dark Horses are momentum signals, not buy recommendations. Signals use relative strength vs {benchmark} + OBV buy-pressure detection.<br />
         Past momentum does not guarantee future returns. Market Caution mode activates automatically in downtrends.<br />
         SEBI Disclaimer: For educational purposes only. Not registered investment advice.
+      </div>
+    </div>
+  );
+}
+
+
+// ── Portfolio Tab ─────────────────────────────────────────────────────────────
+function Portfolio() {
+  const [auth, setAuth] = useState(() => getStoredAuth());
+  const handleLogin  = (token, username) => setAuth({ token, username });
+  const handleLogout = () => { clearAuth(); setAuth(null); };
+  if (!auth) return <LoginGate onLogin={handleLogin} />;
+  return <PortfolioInner auth={auth} onLogout={handleLogout} />;
+}
+
+function PortfolioInner({ auth, onLogout }) {
+  const [positions, setPositions]   = useState([]);
+  const [history, setHistory]       = useState([]);
+  const [summary, setSummary]       = useState(null);
+  const [stats, setStats]           = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
+  const [sellingTicker, setSellingTicker] = useState(null);
+  const [niftyPrice, setNiftyPrice] = useState(0);
+
+  const authHeader = { "Authorization": `Bearer ${auth.token}` };
+
+  const loadPortfolio = async () => {
+    setLoading(true);
+    try {
+      const [posRes, histRes] = await Promise.all([
+        fetch(`${API_BASE}/portfolio/positions`, { headers: authHeader }),
+        fetch(`${API_BASE}/portfolio/history`,   { headers: authHeader }),
+      ]);
+      if (posRes.ok) {
+        const posData = await posRes.json();
+        setPositions(posData.positions || []);
+        setSummary(posData.summary || null);
+        if (posData.positions?.length) {
+          setNiftyPrice(posData.positions[0]?.current_nifty || 0);
+        }
+      }
+      if (histRes.ok) {
+        const histData = await histRes.json();
+        setHistory(histData.trades || []);
+        setStats(histData.stats || null);
+      }
+    } catch (e) {}
+    finally { setLoading(false); }
+  };
+
+  const handleSell = async (position) => {
+    if (!window.confirm(`Sell ${position.ticker} at ₹${position.current_price?.toFixed(2)}?`)) return;
+    setSellingTicker(position.ticker);
+    try {
+      const res = await fetch(`${API_BASE}/portfolio/sell`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({
+          ticker:      position.ticker,
+          exit_price:  position.current_price,
+          exit_signal: position.exit_signal,
+          exit_nifty:  niftyPrice || 0,
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await loadPortfolio();
+      } else {
+        alert(data.detail || "Could not record sell");
+      }
+    } catch (e) {
+      alert("Network error");
+    } finally {
+      setSellingTicker(null);
+    }
+  };
+
+  useEffect(() => { loadPortfolio(); }, []);
+
+  const signalConfig = {
+    HOLD:  { color: "#10b981", bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.25)",  icon: "🟢" },
+    WATCH: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.25)",  icon: "🟡" },
+    EXIT:  { color: "#ef4444", bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.25)",   icon: "🔴" },
+  };
+
+  if (loading) return (
+    <div style={{ padding: 40, textAlign: "center", color: G.muted, fontFamily: G.fontMono, fontSize: 13 }}>
+      Loading portfolio…
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: "0 0 40px" }}>
+
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div>
+          <div style={{ fontFamily: G.fontDisplay, fontSize: "clamp(20px,4vw,28px)", marginBottom: 4 }}>💼 Portfolio</div>
+          <div style={{ color: G.muted, fontSize: 13 }}>India positions · Alpha vs Nifty</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={loadPortfolio} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: G.muted, fontSize: 11, fontFamily: G.fontMono, cursor: "pointer" }}>
+            ↻ Refresh
+          </button>
+          <button onClick={() => { onLogout(); }} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "none", color: G.muted, fontSize: 11, fontFamily: G.fontMono, cursor: "pointer" }}>
+            Sign out
+          </button>
+        </div>
+      </div>
+
+      {/* Summary bar */}
+      {summary && summary.total > 0 && (
+        <div style={{ marginBottom: 20, padding: "14px 16px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontFamily: G.fontMono, fontSize: 12, color: G.subtext }}>
+            <span style={{ color: G.text, fontWeight: 700 }}>{summary.total}</span> open
+          </span>
+          <span style={{ fontFamily: G.fontMono, fontSize: 12, color: G.subtext }}>
+            Avg alpha <span style={{ color: summary.avg_alpha >= 0 ? G.green : G.red, fontWeight: 700 }}>{summary.avg_alpha >= 0 ? "+" : ""}{summary.avg_alpha}%</span>
+          </span>
+          <span style={{ fontFamily: G.fontMono, fontSize: 12 }}>
+            🟢 {summary.hold} &nbsp; 🟡 {summary.watch} &nbsp; 🔴 {summary.exit}
+          </span>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {positions.length === 0 && (
+        <div style={{ padding: "40px 20px", textAlign: "center", color: G.muted, fontFamily: G.fontMono, fontSize: 13, background: "rgba(255,255,255,0.02)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)" }}>
+          No open positions.<br />
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)", marginTop: 8, display: "block" }}>
+            Tap + Buy on any Dark Horse to start tracking.
+          </span>
+        </div>
+      )}
+
+      {/* Open positions */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {positions.map(pos => {
+          const sc = signalConfig[pos.exit_signal] || signalConfig.HOLD;
+          const retPos = (pos.stock_ret || 0) >= 0;
+          const alphaPos = (pos.alpha || 0) >= 0;
+          return (
+            <div key={pos.id} className="dh-card" style={{ borderLeft: `3px solid ${sc.color}` }}>
+
+              {/* Exit signal badge */}
+              <div style={{ marginBottom: 10, padding: "6px 10px", background: sc.bg, border: `1px solid ${sc.border}`, borderRadius: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontFamily: G.fontMono, fontSize: 11, fontWeight: 700, color: sc.color }}>
+                  {sc.icon} {pos.exit_signal}
+                </span>
+                <span style={{ fontFamily: G.fontMono, fontSize: 10, color: sc.color, opacity: 0.8 }}>
+                  {pos.exit_reason}
+                </span>
+              </div>
+
+              {/* Ticker + price */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                <div>
+                  <span style={{ fontFamily: G.fontMono, fontWeight: 700, fontSize: 15, color: G.accent }}>{pos.ticker}</span>
+                  <span style={{ color: G.muted, fontSize: 11, marginLeft: 8 }}>{pos.company_name}</span>
+                  <div style={{ fontSize: 10, color: G.muted, marginTop: 2 }}>{pos.sector} · {pos.days_held}d held · entered {pos.entry_signal}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontFamily: G.fontMono, fontSize: 15, fontWeight: 700 }}>₹{pos.current_price?.toFixed(2)}</div>
+                  <div style={{ fontSize: 10, color: G.muted, fontFamily: G.fontMono }}>entry ₹{parseFloat(pos.entry_price).toFixed(2)}</div>
+                </div>
+              </div>
+
+              {/* Returns */}
+              <div style={{ display: "flex", gap: 20, fontSize: 12, fontFamily: G.fontMono, marginBottom: 12 }}>
+                <div>
+                  <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>RETURN</div>
+                  <div style={{ color: retPos ? G.green : G.red, fontWeight: 700 }}>
+                    {retPos ? "+" : ""}{pos.stock_ret?.toFixed(1)}%
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>NIFTY</div>
+                  <div style={{ color: G.subtext }}>{(pos.nifty_ret || 0) >= 0 ? "+" : ""}{pos.nifty_ret?.toFixed(1)}%</div>
+                </div>
+                <div>
+                  <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>ALPHA</div>
+                  <div style={{ color: alphaPos ? G.green : G.red, fontWeight: 700 }}>
+                    {alphaPos ? "+" : ""}{pos.alpha?.toFixed(1)}%
+                  </div>
+                </div>
+              </div>
+
+              {/* Sell button */}
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => handleSell(pos)}
+                  disabled={sellingTicker === pos.ticker}
+                  style={{
+                    padding: "7px 18px", borderRadius: 6, cursor: "pointer",
+                    fontFamily: G.fontMono, fontSize: 11, fontWeight: 700,
+                    border: `1px solid ${sc.color}40`,
+                    background: sc.bg, color: sc.color,
+                    opacity: sellingTicker === pos.ticker ? 0.5 : 1,
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {sellingTicker === pos.ticker ? "Recording…" : pos.exit_signal === "EXIT" ? "🔴 Sell Now" : "Sell"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Track record */}
+      {(history.length > 0 || stats) && (
+        <div style={{ marginTop: 24 }}>
+          <button
+            onClick={() => setShowHistory(v => !v)}
+            style={{ width: "100%", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 10, padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", color: G.purple, fontFamily: G.fontMono, fontSize: 12, fontWeight: 600 }}
+          >
+            <span>📊 Track Record ({history.length} closed trades)</span>
+            <span style={{ fontSize: 14 }}>{showHistory ? "▲" : "▼"}</span>
+          </button>
+
+          {showHistory && stats && (
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
+
+              {/* Stats summary */}
+              <div style={{ padding: "14px 16px", background: "rgba(139,92,246,0.04)", border: "1px solid rgba(139,92,246,0.15)", borderRadius: 8, display: "flex", gap: 24, flexWrap: "wrap" }}>
+                <div style={{ fontFamily: G.fontMono, fontSize: 12 }}>
+                  <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>WIN RATE</div>
+                  <div style={{ color: G.green, fontWeight: 700 }}>{stats.win_rate}%</div>
+                </div>
+                <div style={{ fontFamily: G.fontMono, fontSize: 12 }}>
+                  <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>AVG ALPHA</div>
+                  <div style={{ color: (stats.avg_alpha||0) >= 0 ? G.green : G.red, fontWeight: 700 }}>
+                    {(stats.avg_alpha||0) >= 0 ? "+" : ""}{stats.avg_alpha}%
+                  </div>
+                </div>
+                {stats.best_trade && (
+                  <div style={{ fontFamily: G.fontMono, fontSize: 12 }}>
+                    <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>BEST</div>
+                    <div style={{ color: G.green, fontWeight: 700 }}>{stats.best_trade.ticker} +{stats.best_trade.alpha?.toFixed(1)}%</div>
+                  </div>
+                )}
+                {stats.worst_trade && (
+                  <div style={{ fontFamily: G.fontMono, fontSize: 12 }}>
+                    <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>WORST</div>
+                    <div style={{ color: G.red, fontWeight: 700 }}>{stats.worst_trade.ticker} {stats.worst_trade.alpha?.toFixed(1)}%</div>
+                  </div>
+                )}
+              </div>
+
+              {/* By entry signal */}
+              {stats.by_entry_signal && Object.keys(stats.by_entry_signal).length > 0 && (
+                <div style={{ padding: "12px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
+                  <div style={{ fontFamily: G.fontMono, fontSize: 10, color: G.muted, marginBottom: 10, fontWeight: 700 }}>ALPHA BY ENTRY SIGNAL</div>
+                  <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                    {Object.entries(stats.by_entry_signal).map(([sig, s]) => (
+                      <div key={sig} style={{ fontFamily: G.fontMono, fontSize: 12 }}>
+                        <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>{sig} ({s.count})</div>
+                        <div style={{ color: s.avg_alpha >= 0 ? G.green : G.red, fontWeight: 700 }}>
+                          {s.avg_alpha >= 0 ? "+" : ""}{s.avg_alpha}%
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Trade list */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {history.map(trade => {
+                  const alphaPos = (trade.alpha || 0) >= 0;
+                  return (
+                    <div key={trade.id} style={{ padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <span style={{ fontFamily: G.fontMono, fontWeight: 700, fontSize: 13, color: G.accent }}>{trade.ticker}</span>
+                        <span style={{ fontSize: 10, color: G.muted, marginLeft: 8, fontFamily: G.fontMono }}>{trade.entry_signal} → {trade.exit_signal}</span>
+                      </div>
+                      <div style={{ textAlign: "right", fontFamily: G.fontMono }}>
+                        <div style={{ color: alphaPos ? G.green : G.red, fontWeight: 700, fontSize: 13 }}>
+                          {alphaPos ? "+" : ""}{parseFloat(trade.alpha || 0).toFixed(1)}% alpha
+                        </div>
+                        <div style={{ fontSize: 10, color: G.muted }}>
+                          ₹{parseFloat(trade.entry_price).toFixed(0)} → ₹{parseFloat(trade.exit_price || 0).toFixed(0)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Disclaimer */}
+      <div style={{ marginTop: 24, fontSize: 11, color: "rgba(255,255,255,0.15)", textAlign: "center", fontFamily: G.fontMono, lineHeight: 1.6 }}>
+        Portfolio tracks hypothetical entries at signal prices. Not financial advice.
       </div>
     </div>
   );
@@ -1084,7 +1461,7 @@ function AdvisorFlow() {
 // ── App Shell ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("advisor");
-  const TABS = [["advisor","🧭 Advisor"],["darkhorses","🐴 India"],["darkhorses-us","🇺🇸 US"],["research","🔬 Research"]];
+  const TABS = [["advisor","🧭 Advisor"],["darkhorses","🐴 India"],["darkhorses-us","🇺🇸 US"],["portfolio","💼 Portfolio"],["research","🔬 Research"]];
 
   return (
     <div style={{ minHeight:"100vh",background:G.bg,color:G.text,fontFamily:G.fontBody,display:"flex",flexDirection:"column" }}>
@@ -1130,6 +1507,7 @@ export default function App() {
         {tab==="advisor"&&<AdvisorFlow/>}
         {tab==="darkhorses"&&<DarkHorses market="india" />}
         {tab==="darkhorses-us"&&<DarkHorses market="us" />}
+        {tab==="portfolio"&&<Portfolio />}
         {tab==="research"&&<ResearchTerminal/>}
       </div>
 
