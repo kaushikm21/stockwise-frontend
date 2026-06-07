@@ -661,6 +661,29 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
                 );
               })()}
 
+              {/* Policy / Crypto tags */}
+              {(pick.is_policy_driven || pick.is_crypto_driven) && (
+                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {pick.is_policy_driven && (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 4, background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.3)", fontSize: 10, fontFamily: G.fontMono, fontWeight: 700, color: "#60a5fa" }}>
+                        🏛️ POLICY-DRIVEN
+                      </span>
+                    )}
+                    {pick.is_crypto_driven && (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 4, background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", fontSize: 10, fontFamily: G.fontMono, fontWeight: 700, color: "#fbbf24" }}>
+                        ₿ CRYPTO-DRIVEN
+                      </span>
+                    )}
+                  </div>
+                  {pick.recent_headlines && pick.recent_headlines[0] && (
+                    <div style={{ padding: "6px 10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 6, fontSize: 11, color: G.muted, fontFamily: G.fontMono, lineHeight: 1.5 }}>
+                      📰 {pick.recent_headlines[0]}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* AI signal */}
               <div style={{ marginTop: 8, padding: "10px 12px", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.15)", borderRadius: 8, fontSize: 13, color: G.subtext, lineHeight: 1.6 }}>
                 <span style={{ color: G.purple, fontFamily: G.fontMono, fontSize: 10, fontWeight: 700 }}>◈ AI SIGNAL  </span>
