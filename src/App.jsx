@@ -997,7 +997,7 @@ function PortfolioInner({ auth, onLogout }) {
               </div>
 
               {/* Returns */}
-              <div style={{ display: "flex", gap: 20, fontSize: 12, fontFamily: G.fontMono, marginBottom: 12 }}>
+              <div style={{ display: "flex", gap: 20, fontSize: 12, fontFamily: G.fontMono, marginBottom: 10, flexWrap: "wrap" }}>
                 <div>
                   <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>RETURN</div>
                   <div style={{ color: retPos ? G.green : G.red, fontWeight: 700 }}>
@@ -1014,7 +1014,45 @@ function PortfolioInner({ auth, onLogout }) {
                     {alphaPos ? "+" : ""}{pos.alpha?.toFixed(1)}%
                   </div>
                 </div>
+                {pos.sell_pressure != null && (
+                  <div>
+                    <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>SELL PRESSURE</div>
+                    <div style={{ color: pos.sell_pressure > 1.3 ? G.red : pos.sell_pressure > 1.1 ? G.accent : G.green, fontWeight: 700 }}>
+                      {pos.sell_pressure?.toFixed(2)}x
+                    </div>
+                  </div>
+                )}
+                {pos.obv_signal != null && (
+                  <div>
+                    <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>OBV</div>
+                    <div style={{ color: pos.obv_signal > 0 ? G.green : G.red, fontWeight: 700 }}>
+                      {pos.obv_signal > 0 ? "▲" : "▼"} {Math.abs(pos.obv_signal)?.toFixed(2)}
+                    </div>
+                  </div>
+                )}
+                {pos.recency_score != null && (
+                  <div>
+                    <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>RECENCY</div>
+                    <div style={{ color: pos.recency_score > 0.5 ? G.green : pos.recency_score > 0.3 ? G.accent : G.red, fontWeight: 700 }}>
+                      {(pos.recency_score * 10)?.toFixed(1)}/10
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* News headline if present */}
+              {pos.news_headline && (
+                <div style={{ marginBottom: 10, padding: "6px 10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 6, fontSize: 11, color: G.muted, fontFamily: G.fontMono, lineHeight: 1.5 }}>
+                  📰 {pos.news_headline}
+                </div>
+              )}
+
+              {/* Extra reason if present */}
+              {pos.extra_reason && pos.extra_reason !== pos.exit_reason && (
+                <div style={{ marginBottom: 10, padding: "6px 10px", background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 6, fontSize: 11, color: G.red, fontFamily: G.fontMono, lineHeight: 1.5 }}>
+                  ⚠ {pos.extra_reason}
+                </div>
+              )}
 
               {/* Sell button */}
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
