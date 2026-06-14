@@ -342,10 +342,12 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
   const [buySuccess, setBuySuccess] = useState(null);
 
   // Load held tickers from portfolio on mount (India only)
+  const portfolioEndpoint = isUS ? "portfolio-us" : "portfolio";
+
   const loadHeldTickers = async () => {
-    if (isUS || !auth?.token) return;
+    if (!auth?.token) return;
     try {
-      const res = await fetch(`${API_BASE}/portfolio/positions`, {
+      const res = await fetch(`${API_BASE}/${portfolioEndpoint}/positions`, {
         headers: { "Authorization": `Bearer ${auth.token}` }
       });
       if (res.ok) {
@@ -355,22 +357,32 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
     } catch (e) {}
   };
 
-  const handleBuy = async (pick, niftyPrice) => {
-    if (!auth?.token || isUS) return;
+  const handleBuy = async (pick, benchmarkPrice) => {
+    if (!auth?.token) return;
     setBuyingTicker(pick.ticker);
     try {
-      const res = await fetch(`${API_BASE}/portfolio/buy`, {
+      const entryPrice = parseFloat(String(pick.price).replace(/[₹$,]/g, ""));
+      const bodyData = isUS ? {
+        ticker:       pick.ticker,
+        company_name: pick.name,
+        entry_price:  entryPrice,
+        entry_signal: pick.flag,
+        entry_flag:   pick.flag,
+        entry_spy:    benchmarkPrice || 0,
+        sector:       pick.sector,
+      } : {
+        ticker:       pick.ticker,
+        company_name: pick.name,
+        entry_price:  entryPrice,
+        entry_signal: pick.flag,
+        entry_flag:   pick.flag,
+        entry_nifty:  benchmarkPrice || 0,
+        sector:       pick.sector,
+      };
+      const res = await fetch(`${API_BASE}/${portfolioEndpoint}/buy`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${auth.token}` },
-        body: JSON.stringify({
-          ticker:       pick.ticker,
-          company_name: pick.name,
-          entry_price:  parseFloat(String(pick.price).replace(/[₹,]/g, "")),
-          entry_signal: pick.flag,
-          entry_flag:   pick.flag,
-          entry_nifty:  niftyPrice || 0,
-          sector:       pick.sector,
-        })
+        body: JSON.stringify(bodyData)
       });
       const data = await res.json();
       if (res.ok) {
@@ -741,8 +753,8 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
                 {pick.signal}
               </div>
 
-              {/* Buy button — India only */}
-              {!isUS && (
+              {/* Buy button */}
+              {(
                 <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
                   {heldTickers.has(pick.ticker) ? (
                     <span style={{ fontSize: 11, fontFamily: G.fontMono, color: G.green, display: "flex", alignItems: "center", gap: 4 }}>
@@ -754,7 +766,7 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
                     </span>
                   ) : (
                     <button
-                      onClick={() => handleBuy(pick, regime?.nifty_price || 0)}
+                      onClick={() => handleBuy(pick, isUS ? (regime?.spy_price || 0) : (regime?.nifty_price || 0))}
                       disabled={buyingTicker === pick.ticker}
                       style={{
                         padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(16,185,129,0.4)",
@@ -835,15 +847,20 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
 
 
 // ── Portfolio Tab ─────────────────────────────────────────────────────────────
-function Portfolio() {
+function Portfolio({ market = "india" }) {
   const [auth, setAuth] = useState(() => getStoredAuth());
   const handleLogin  = (token, username) => setAuth({ token, username });
   const handleLogout = () => { clearAuth(); setAuth(null); };
   if (!auth) return <LoginGate onLogin={handleLogin} />;
-  return <PortfolioInner auth={auth} onLogout={handleLogout} />;
+  return <PortfolioInner auth={auth} onLogout={handleLogout} market={market} />;
 }
 
-function PortfolioInner({ auth, onLogout }) {
+function PortfolioInner({ auth, onLogout, market = "india" }) {
+  const isUS        = market === "us";
+  const currency    = isUS ? "$" : "₹";
+  const benchmark   = isUS ? "S&P 500" : "Nifty";
+  const apiPrefix   = isUS ? "portfolio-us" : "portfolio";
+  const marketLabel = isUS ? "🇺🇸 US Portfolio" : "💼 India Portfolio";
   const [positions, setPositions]   = useState([]);
   const [history, setHistory]       = useState([]);
   const [summary, setSummary]       = useState(null);
@@ -851,7 +868,7 @@ function PortfolioInner({ auth, onLogout }) {
   const [loading, setLoading]       = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [sellingTicker, setSellingTicker] = useState(null);
-  const [niftyPrice, setNiftyPrice] = useState(0);
+  const [benchmarkPrice, setBenchmarkPrice] = useState(0);
 
   const authHeader = { "Authorization": `Bearer ${auth.token}` };
 
@@ -859,15 +876,15 @@ function PortfolioInner({ auth, onLogout }) {
     setLoading(true);
     try {
       const [posRes, histRes] = await Promise.all([
-        fetch(`${API_BASE}/portfolio/positions`, { headers: authHeader }),
-        fetch(`${API_BASE}/portfolio/history`,   { headers: authHeader }),
+        fetch(`${API_BASE}/${apiPrefix}/positions`, { headers: authHeader }),
+        fetch(`${API_BASE}/${apiPrefix}/history`,   { headers: authHeader }),
       ]);
       if (posRes.ok) {
         const posData = await posRes.json();
         setPositions(posData.positions || []);
         setSummary(posData.summary || null);
         if (posData.positions?.length) {
-          setNiftyPrice(posData.positions[0]?.current_nifty || 0);
+          setBenchmarkPrice(posData.positions[0]?.current_nifty || posData.positions[0]?.current_spy || 0);
         }
       }
       if (histRes.ok) {
@@ -883,15 +900,21 @@ function PortfolioInner({ auth, onLogout }) {
     if (!window.confirm(`Sell ${position.ticker} at ₹${position.current_price?.toFixed(2)}?`)) return;
     setSellingTicker(position.ticker);
     try {
-      const res = await fetch(`${API_BASE}/portfolio/sell`, {
+      const sellBody = isUS ? {
+        ticker:      position.ticker,
+        exit_price:  position.current_price,
+        exit_signal: position.exit_signal,
+        exit_spy:    benchmarkPrice || 0,
+      } : {
+        ticker:      position.ticker,
+        exit_price:  position.current_price,
+        exit_signal: position.exit_signal,
+        exit_nifty:  benchmarkPrice || 0,
+      };
+      const res = await fetch(`${API_BASE}/${apiPrefix}/sell`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader },
-        body: JSON.stringify({
-          ticker:      position.ticker,
-          exit_price:  position.current_price,
-          exit_signal: position.exit_signal,
-          exit_nifty:  niftyPrice || 0,
-        })
+        body: JSON.stringify(sellBody)
       });
       const data = await res.json();
       if (res.ok) {
@@ -926,8 +949,8 @@ function PortfolioInner({ auth, onLogout }) {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
-          <div style={{ fontFamily: G.fontDisplay, fontSize: "clamp(20px,4vw,28px)", marginBottom: 4 }}>💼 Portfolio</div>
-          <div style={{ color: G.muted, fontSize: 13 }}>India positions · Alpha vs Nifty</div>
+          <div style={{ fontFamily: G.fontDisplay, fontSize: "clamp(20px,4vw,28px)", marginBottom: 4 }}>{marketLabel}</div>
+          <div style={{ color: G.muted, fontSize: 13 }}>{isUS ? "US positions · Alpha vs S&P 500" : "India positions · Alpha vs Nifty"}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={loadPortfolio} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: G.muted, fontSize: 11, fontFamily: G.fontMono, cursor: "pointer" }}>
@@ -991,8 +1014,8 @@ function PortfolioInner({ auth, onLogout }) {
                   <div style={{ fontSize: 10, color: G.muted, marginTop: 2 }}>{pos.sector} · {pos.days_held}d held · entered {pos.entry_signal}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: G.fontMono, fontSize: 15, fontWeight: 700 }}>₹{pos.current_price?.toFixed(2)}</div>
-                  <div style={{ fontSize: 10, color: G.muted, fontFamily: G.fontMono }}>entry ₹{parseFloat(pos.entry_price).toFixed(2)}</div>
+                  <div style={{ fontFamily: G.fontMono, fontSize: 15, fontWeight: 700 }}>{currency}{pos.current_price?.toFixed(2)}</div>
+                  <div style={{ fontSize: 10, color: G.muted, fontFamily: G.fontMono }}>entry {currency}{parseFloat(pos.entry_price).toFixed(2)}</div>
                 </div>
               </div>
 
@@ -1005,8 +1028,8 @@ function PortfolioInner({ auth, onLogout }) {
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>NIFTY</div>
-                  <div style={{ color: G.subtext }}>{(pos.nifty_ret || 0) >= 0 ? "+" : ""}{pos.nifty_ret?.toFixed(1)}%</div>
+                  <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>{benchmark.toUpperCase()}</div>
+                  <div style={{ color: G.subtext }}>{((pos.nifty_ret || pos.spy_ret || 0)) >= 0 ? "+" : ""}{(pos.nifty_ret || pos.spy_ret || 0).toFixed(1)}%</div>
                 </div>
                 <div>
                   <div style={{ color: G.muted, fontSize: 10, marginBottom: 2 }}>ALPHA</div>
@@ -1148,7 +1171,7 @@ function PortfolioInner({ auth, onLogout }) {
                           {alphaPos ? "+" : ""}{parseFloat(trade.alpha || 0).toFixed(1)}% alpha
                         </div>
                         <div style={{ fontSize: 10, color: G.muted }}>
-                          ₹{parseFloat(trade.entry_price).toFixed(0)} → ₹{parseFloat(trade.exit_price || 0).toFixed(0)}
+                          {currency}{parseFloat(trade.entry_price).toFixed(0)} → {currency}{parseFloat(trade.exit_price || 0).toFixed(0)}
                         </div>
                       </div>
                     </div>
@@ -1162,7 +1185,7 @@ function PortfolioInner({ auth, onLogout }) {
 
       {/* Disclaimer */}
       <div style={{ marginTop: 24, fontSize: 11, color: "rgba(255,255,255,0.15)", textAlign: "center", fontFamily: G.fontMono, lineHeight: 1.6 }}>
-        Portfolio tracks hypothetical entries at signal prices. Not financial advice.
+        Portfolio tracks entries at signal prices vs {benchmark}. Not financial advice.
       </div>
     </div>
   );
@@ -1499,7 +1522,7 @@ function AdvisorFlow() {
 // ── App Shell ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("advisor");
-  const TABS = [["advisor","🧭 Advisor"],["darkhorses","🐴 India"],["darkhorses-us","🇺🇸 US"],["portfolio","💼 Portfolio"],["research","🔬 Research"]];
+  const TABS = [["advisor","🧭 Advisor"],["darkhorses","🐴 India"],["darkhorses-us","🇺🇸 US"],["portfolio","💼 India"],["portfolio-us","💼 US"],["research","🔬 Research"]];
 
   return (
     <div style={{ minHeight:"100vh",background:G.bg,color:G.text,fontFamily:G.fontBody,display:"flex",flexDirection:"column" }}>
@@ -1545,7 +1568,8 @@ export default function App() {
         {tab==="advisor"&&<AdvisorFlow/>}
         {tab==="darkhorses"&&<DarkHorses market="india" />}
         {tab==="darkhorses-us"&&<DarkHorses market="us" />}
-        {tab==="portfolio"&&<Portfolio />}
+        {tab==="portfolio"&&<Portfolio market="india" />}
+        {tab==="portfolio-us"&&<Portfolio market="us" />}
         {tab==="research"&&<ResearchTerminal/>}
       </div>
 
