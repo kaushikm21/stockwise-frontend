@@ -324,6 +324,8 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
   const [picks, setPicks] = useState([]);
   const [yoyoPicks, setYoyoPicks] = useState([]);
   const [showYoyo, setShowYoyo] = useState(false);
+  const [crowdedPicks, setCrowdedPicks] = useState([]);
+  const [showCrowded, setShowCrowded] = useState(false);
   const [marketNote, setMarketNote] = useState("");
   const [regime, setRegime] = useState(null);
   const [stocksScanned, setStocksScanned] = useState(stockCount);
@@ -411,6 +413,7 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
       if (data.error && (!data.picks || data.picks.length === 0)) throw new Error(data.error);
       setPicks(data.picks || []);
       setYoyoPicks(data.yoyo_picks || []);
+      setCrowdedPicks(data.crowded_picks || []);
       setMarketNote(data.market_note || "");
       setRegime(data.regime || null);
       setStocksScanned(data.stocks_scanned || 150);
@@ -826,6 +829,54 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
                   {pick.signal && (
                     <div style={{ fontSize: 11, color: G.muted, lineHeight: 1.6, padding: "8px 10px", background: "rgba(255,255,255,0.03)", borderRadius: 6, borderLeft: "2px solid rgba(251,191,36,0.3)" }}>
                       <span style={{ color: "#fbbf24", fontSize: 10, fontWeight: 600, fontFamily: G.fontMono }}>YO-YO WATCH · </span>{pick.signal}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Crowded Trades Section ────────────────────────────────────── */}
+      {crowdedPicks.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <button
+            onClick={() => setShowCrowded(v => !v)}
+            style={{ width: "100%", background: "rgba(148,163,184,0.06)", border: "1px solid rgba(148,163,184,0.2)", borderRadius: 10, padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#94a3b8", fontFamily: G.fontMono, fontSize: 12, fontWeight: 600 }}
+          >
+            <span>👥 Crowded Trades ({crowdedPicks.length})</span>
+            <span style={{ fontSize: 10, color: G.muted, fontWeight: 400, marginLeft: 8, flex: 1, textAlign: "left", paddingLeft: 12 }}>
+              Strong movers the crowd has already discovered — still tracked, not fresh
+            </span>
+            <span style={{ fontSize: 14 }}>{showCrowded ? "▲" : "▼"}</span>
+          </button>
+          {showCrowded && (
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ padding: "8px 14px", background: "rgba(148,163,184,0.04)", border: "1px solid rgba(148,163,184,0.12)", borderRadius: 8, fontSize: 11, color: "#94a3b8", fontFamily: G.fontMono, lineHeight: 1.6 }}>
+                These stocks have been picked 15+ consecutive scans — the crowd is fully in. Often still performing, but the early-mover edge is gone. Existing holders may stay in; new entries carry more risk.
+              </div>
+              {crowdedPicks.map((pick, i) => (
+                <div key={i} className="card" style={{ padding: 16, borderLeft: "3px solid #94a3b8", opacity: 0.85 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                    <div>
+                      <span style={{ fontFamily: G.fontMono, fontWeight: 700, fontSize: 14, color: "#94a3b8" }}>{pick.ticker}</span>
+                      <span style={{ color: G.muted, fontSize: 11, marginLeft: 8 }}>{pick.name}</span>
+                      <div style={{ fontSize: 10, color: G.muted, marginTop: 2 }}>{pick.sector}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: G.fontMono, fontSize: 15, fontWeight: 700 }}>{pick.price}</div>
+                      <div style={{ fontSize: 10, color: "#94a3b8", fontFamily: G.fontMono, marginTop: 2 }}>👥 {pick.consecutive_picks}x picked</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, fontSize: 11, fontFamily: G.fontMono, color: G.muted, marginBottom: 8 }}>
+                    <span>5D <span style={{ color: (pick.ret_5d||0) > 0 ? G.green : G.red }}>{(pick.ret_5d||0) > 0 ? "+" : ""}{(pick.ret_5d||0).toFixed(1)}%</span></span>
+                    <span>1M <span style={{ color: (pick.ret_1m||0) > 0 ? G.green : G.red }}>{(pick.ret_1m||0) > 0 ? "+" : ""}{(pick.ret_1m||0).toFixed(1)}%</span></span>
+                    <span>vs {benchmark} <span style={{ color: (pick.rs_5d||0) > 0 ? G.green : G.red }}>{(pick.rs_5d||0) > 0 ? "+" : ""}{(pick.rs_5d||0).toFixed(1)}%</span></span>
+                  </div>
+                  {pick.signal && (
+                    <div style={{ fontSize: 11, color: G.muted, lineHeight: 1.6, padding: "8px 10px", background: "rgba(255,255,255,0.03)", borderRadius: 6, borderLeft: "2px solid rgba(148,163,184,0.3)" }}>
+                      <span style={{ color: "#94a3b8", fontSize: 10, fontWeight: 600, fontFamily: G.fontMono }}>CROWDED · </span>{pick.signal}
                     </div>
                   )}
                 </div>
