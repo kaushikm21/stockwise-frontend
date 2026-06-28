@@ -879,6 +879,32 @@ function DarkHorsesInner({ auth, onLogout, market = "india" }) {
                       <span style={{ color: "#94a3b8", fontSize: 10, fontWeight: 600, fontFamily: G.fontMono }}>CROWDED · </span>{pick.signal}
                     </div>
                   )}
+                  {/* Buy button — same functionality as main picks */}
+                  <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                    {heldTickers.has(pick.ticker) ? (
+                      <span style={{ fontSize: 11, fontFamily: G.fontMono, color: G.green, display: "flex", alignItems: "center", gap: 4 }}>
+                        ✓ IN PORTFOLIO
+                      </span>
+                    ) : buySuccess === pick.ticker ? (
+                      <span style={{ fontSize: 11, fontFamily: G.fontMono, color: G.green }}>
+                        ✓ Recorded!
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleBuy(pick, isUS ? (regime?.spy_price || 0) : (regime?.nifty_price || 0))}
+                        disabled={buyingTicker === pick.ticker}
+                        style={{
+                          padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(16,185,129,0.4)",
+                          background: "rgba(16,185,129,0.08)", color: G.green, fontSize: 11,
+                          fontFamily: G.fontMono, fontWeight: 700, cursor: "pointer",
+                          opacity: buyingTicker === pick.ticker ? 0.5 : 1,
+                          transition: "all 0.2s",
+                        }}
+                      >
+                        {buyingTicker === pick.ticker ? "Recording…" : "+ Buy"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
